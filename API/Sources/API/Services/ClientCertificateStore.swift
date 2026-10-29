@@ -1,7 +1,7 @@
 import Foundation
 import SimpleKeychain
 
-protocol ClientCertificateKeychain: Sendable {
+protocol ClientCertificateKeychain {
   func set(_ data: Data, forKey key: String) throws
   func data(forKey key: String) throws -> Data?
   func delete(forKey key: String) throws
