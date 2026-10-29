@@ -10,6 +10,7 @@ public final class Server {
   public internal(set) var customHeaders: [String: String]
   public internal(set) var alias: String?
   public internal(set) var alternativeURL: URL?
+  public internal(set) var clientCertificate: ClientCertificateReference?
   public var urlMode: URLMode
 
   public enum URLMode: Sendable {
@@ -24,6 +25,17 @@ public final class Server {
 
   public var activeURL: URL {
     isUsingAlternativeURL ? alternativeURL ?? baseURL : baseURL
+  }
+
+  public var certificateAllowedHosts: Set<String> {
+    var hosts: Set<String> = []
+    if let endpoint = ClientCertificateEndpoint(url: baseURL) {
+      hosts.insert(endpoint.key)
+    }
+    if let alternativeURL, let endpoint = ClientCertificateEndpoint(url: alternativeURL) {
+      hosts.insert(endpoint.key)
+    }
+    return hosts
   }
 
   public enum Status: Sendable {
@@ -87,6 +99,7 @@ public final class Server {
     self.customHeaders = connection.customHeaders
     self.alias = connection.alias
     self.alternativeURL = connection.alternativeURL
+    self.clientCertificate = connection.clientCertificate
     self.urlMode = connection.isUsingAlternativeURL ? .alternative : .primary
     self.storage = UserDefaults(suiteName: "connection.\(connection.id)") ?? .standard
   }
