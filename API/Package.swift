@@ -29,7 +29,8 @@ let package = Package(
     ),
     .testTarget(
       name: "APITests",
-      dependencies: ["API"]
+      dependencies: ["API"],
+      resources: [.copy("Fixtures")]
     ),
   ]
 )
