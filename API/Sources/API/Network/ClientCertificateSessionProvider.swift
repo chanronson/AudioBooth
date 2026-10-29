@@ -15,7 +15,7 @@ public final class ClientCertificateSessionProvider: @unchecked Sendable {
     discretionary: Bool
   ) -> any URLSessionProtocol {
     guard let reference else {
-      return discretionary ? Self.discretionarySession : Self.session
+      return discretionary ? Self.baseDiscretionarySession : Self.baseSession
     }
 
     let key = Self.cacheKey(
@@ -100,7 +100,7 @@ public final class ClientCertificateSessionProvider: @unchecked Sendable {
     return config
   }
 
-  private static let session: URLSessionProtocol = {
+  private static let baseSession: URLSessionProtocol = {
     let config = configuration(discretionary: false)
 
     #if os(watchOS)
@@ -110,7 +110,7 @@ public final class ClientCertificateSessionProvider: @unchecked Sendable {
     #endif
   }()
 
-  private static let discretionarySession: URLSessionProtocol = {
+  private static let baseDiscretionarySession: URLSessionProtocol = {
     let config = configuration(discretionary: true)
 
     #if os(watchOS)
