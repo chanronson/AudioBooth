@@ -29,6 +29,16 @@ final class ClientCertificateImporterTests: XCTestCase {
     XCTAssertEqual(stored.p12Data, try fixture("client"))
   }
 
+  func testUsesCertificateCommonNameWhenDisplayNameIsEmpty() throws {
+    let stored = try ClientCertificateImporter.importPKCS12(
+      data: fixture("client"),
+      password: "test",
+      displayName: ""
+    )
+
+    XCTAssertEqual(stored.reference.displayName, "AudioBooth Test Client")
+  }
+
   func testRejectsWrongPassword() throws {
     XCTAssertThrowsError(
       try ClientCertificateImporter.importPKCS12(
