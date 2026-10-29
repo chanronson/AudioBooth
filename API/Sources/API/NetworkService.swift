@@ -15,6 +15,8 @@ public enum NetworkError: LocalizedError {
   case invalidResponse
   case decodingError(Error)
   case localNetworkPermission
+  case clientCertificateRequired
+  case clientCertificateRejected
 
   public var errorDescription: String? {
     switch self {
@@ -38,6 +40,24 @@ public enum NetworkError: LocalizedError {
     case .localNetworkPermission:
       return
         "The internet connection appears to be offline. If connecting to a local address, check that Local Network access is enabled in Settings → Privacy & Security → Local Network."
+    case .clientCertificateRequired:
+      return
+        "This server requires a client certificate. Open Server > Client Certificate and import a valid certificate."
+    case .clientCertificateRejected:
+      return
+        "The server rejected the client certificate. Open Server > Client Certificate and check the certificate."
+    }
+  }
+
+  public static func map(_ error: Error) -> Error {
+    guard let urlError = error as? URLError else { return error }
+    switch urlError.code {
+    case .clientCertificateRequired:
+      return NetworkError.clientCertificateRequired
+    case .clientCertificateRejected:
+      return NetworkError.clientCertificateRejected
+    default:
+      return error
     }
   }
 }
@@ -76,77 +96,9 @@ struct NetworkResponse<T: Decodable> {
 
 final class NetworkService: @unchecked Sendable {
   private let baseURL: URL?
+  private let clientCertificate: ClientCertificateReference?
   private let headersProvider: @Sendable () async -> [String: String]
   private weak var server: Server?
-
-  private static let session: URLSessionProtocol = {
-    let config = URLSessionConfiguration.default
-    config.timeoutIntervalForRequest = 30
-    config.timeoutIntervalForResource = 120
-
-    config.httpAdditionalHeaders = ["User-Agent": userAgent]
-
-    #if os(watchOS)
-    config.timeoutIntervalForResource = 300
-    config.allowsExpensiveNetworkAccess = true
-    config.allowsConstrainedNetworkAccess = true
-    config.allowsCellularAccess = true
-    #endif
-
-    #if os(watchOS)
-    return URLSession(configuration: config)
-    #else
-    return URLSessionProxy(configuration: config)
-    #endif
-  }()
-
-  private static let discretionarySession: URLSessionProtocol = {
-    let discretionaryConfig = URLSessionConfiguration.default
-    discretionaryConfig.timeoutIntervalForRequest = 30
-    discretionaryConfig.timeoutIntervalForResource = 60
-
-    discretionaryConfig.httpAdditionalHeaders = ["User-Agent": userAgent]
-
-    #if os(watchOS)
-    discretionaryConfig.timeoutIntervalForResource = 300
-    discretionaryConfig.allowsExpensiveNetworkAccess = true
-    discretionaryConfig.allowsConstrainedNetworkAccess = true
-    discretionaryConfig.allowsCellularAccess = true
-    discretionaryConfig.waitsForConnectivity = true
-    #endif
-
-    #if os(iOS)
-    discretionaryConfig.sessionSendsLaunchEvents = true
-    discretionaryConfig.isDiscretionary = true
-    discretionaryConfig.shouldUseExtendedBackgroundIdleMode = true
-    #endif
-
-    #if os(watchOS)
-    return URLSession(configuration: discretionaryConfig)
-    #else
-    return URLSessionProxy(configuration: discretionaryConfig)
-    #endif
-  }()
-
-  private static let userAgent: String = {
-    let os = ProcessInfo.processInfo.operatingSystemVersion
-    let osVersion = "\(os.majorVersion)_\(os.minorVersion)_\(os.patchVersion)"
-
-    #if targetEnvironment(macCatalyst)
-    let platform = "Macintosh; Mac OS X \(osVersion)"
-    #elseif os(watchOS)
-    let platform = "Apple Watch; watchOS/\(os.majorVersion).\(os.minorVersion).\(os.patchVersion)"
-    #else
-    let platform =
-      Device.identifier.hasPrefix("iPad")
-      ? "iPad; CPU OS \(osVersion) like Mac OS X"
-      : "iPhone; CPU iPhone OS \(osVersion) like Mac OS X"
-    #endif
-
-    let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
-
-    return "AudioBooth/\(appVersion) (\(platform))"
-  }()
 
   private let decoder: JSONDecoder = {
     let decoder = JSONDecoder()
@@ -161,10 +113,12 @@ final class NetworkService: @unchecked Sendable {
   init(
     baseURL: URL? = nil,
     server: Server? = nil,
+    clientCertificate: ClientCertificateReference? = nil,
     headersProvider: @escaping @Sendable () async -> [String: String] = { [:] }
   ) {
     self.baseURL = baseURL
     self.server = server
+    self.clientCertificate = clientCertificate
     self.headersProvider = headersProvider
   }
 
@@ -187,7 +141,7 @@ final class NetworkService: @unchecked Sendable {
         let server,
         await server.alternativeURL != nil
       else {
-        throw error
+        throw NetworkError.map(error)
       }
 
       let previousMode = await server.urlMode
@@ -202,7 +156,7 @@ final class NetworkService: @unchecked Sendable {
         return try await performRequest(request)
       } catch {
         await MainActor.run { server.urlMode = previousMode }
-        throw error
+        throw NetworkError.map(error)
       }
     }
   }
@@ -219,7 +173,14 @@ final class NetworkService: @unchecked Sendable {
       "Sending \(urlRequest.httpMethod ?? "GET") request to: \(urlRequest.url?.absoluteString ?? "unknown")"
     )
 
-    let selectedSession = request.discretionary ? Self.discretionarySession : Self.session
+    let server = self.server
+    let allowedHosts = await server?.certificateAllowedHosts ?? []
+    let certificate = await server?.clientCertificate ?? clientCertificate
+    let selectedSession = ClientCertificateSessionProvider.shared.session(
+      for: certificate,
+      allowedHosts: allowedHosts,
+      discretionary: request.discretionary
+    )
 
     do {
       let (data, response) = try await selectedSession.data(for: urlRequest)
