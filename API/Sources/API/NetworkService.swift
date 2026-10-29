@@ -174,7 +174,10 @@ final class NetworkService: @unchecked Sendable {
     )
 
     let server = self.server
-    let allowedHosts = await server?.certificateAllowedHosts ?? []
+    var allowedHosts = await server?.certificateAllowedHosts ?? []
+    if let endpoint = urlRequest.url.flatMap(ClientCertificateEndpoint.init(url:)) {
+      allowedHosts.insert(endpoint.key)
+    }
     let certificate = await server?.clientCertificate ?? clientCertificate
     let selectedSession = ClientCertificateSessionProvider.shared.session(
       for: certificate,
