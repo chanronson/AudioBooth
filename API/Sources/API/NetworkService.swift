@@ -1,6 +1,5 @@
 import Foundation
 import Logging
-import Pulse
 
 enum HTTPMethod: String {
   case get = "GET"
