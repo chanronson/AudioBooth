@@ -108,6 +108,8 @@ When you use Apple Watch with AudioBooth, the iPhone sends the active server cer
 
 If the watch has a certificate reference but no stored certificate, the watch asks the iPhone to resend the file. If you remove the certificate on the iPhone, the watch deletes its copy.
 
+AudioBooth plays downloaded tracks on Apple Watch. Watch streaming of a remote track does not use the client certificate. Download the book on the watch before playback.
+
 ## Security
 
 AudioBooth stores the PKCS#12 data and the password only in the Keychain. The Keychain item uses the `afterFirstUnlockThisDeviceOnly` accessibility level.
@@ -132,7 +134,7 @@ The file has a certificate but no private key. Create a new `.p12` file with the
 
 ### Certificate Rejected
 
-Error: **The server rejected the client certificate. Open Server > Client Certificate and check the certificate.**
+Error: **The server rejected the client certificate. Open Server > Advanced > Client Certificate and check the certificate.**
 
 Check these items:
 
@@ -144,7 +146,7 @@ Replace the certificate if the server configuration changed.
 
 ### Certificate Required
 
-Error: **This server requires a client certificate. Open Server > Client Certificate and import a valid certificate.**
+Error: **This server requires a client certificate. Open Server > Advanced > Client Certificate and import a valid certificate.**
 
 The server requested a certificate but AudioBooth has no certificate for this connection. Import a certificate or check that the server URL matches the certificate host.
 

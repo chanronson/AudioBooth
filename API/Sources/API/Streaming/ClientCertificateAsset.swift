@@ -1,3 +1,4 @@
+#if !os(watchOS)
 import AVFoundation
 import Foundation
 import Pulse
@@ -96,7 +97,9 @@ final class ClientCertificateResourceLoader: NSObject, AVAssetResourceLoaderDele
         return
       }
 
-      guard let httpResponse = response as? HTTPURLResponse else {
+      guard let httpResponse = response as? HTTPURLResponse,
+        200...299 ~= httpResponse.statusCode
+      else {
         box.request.finishLoading(with: URLError(.badServerResponse))
         return
       }
@@ -116,10 +119,6 @@ final class ClientCertificateResourceLoader: NSObject, AVAssetResourceLoaderDele
       }
 
       if let dataRequest = box.request.dataRequest {
-        guard 200...299 ~= httpResponse.statusCode else {
-          box.request.finishLoading(with: URLError(.badServerResponse))
-          return
-        }
         dataRequest.respond(with: data ?? Data())
       }
 
@@ -151,9 +150,7 @@ final class ClientCertificateResourceLoader: NSObject, AVAssetResourceLoaderDele
       request.setValue(value, forHTTPHeaderField: key)
     }
 
-    if loadingRequest.contentInformationRequest != nil {
-      request.setValue("bytes=0-0", forHTTPHeaderField: "Range")
-    } else if let dataRequest = loadingRequest.dataRequest {
+    if let dataRequest = loadingRequest.dataRequest {
       let start = dataRequest.requestedOffset
       if dataRequest.requestsAllDataToEndOfResource || dataRequest.requestedLength <= 0 {
         request.setValue("bytes=\(start)-", forHTTPHeaderField: "Range")
@@ -161,6 +158,8 @@ final class ClientCertificateResourceLoader: NSObject, AVAssetResourceLoaderDele
         let end = start + Int64(dataRequest.requestedLength) - 1
         request.setValue("bytes=\(start)-\(end)", forHTTPHeaderField: "Range")
       }
+    } else if loadingRequest.contentInformationRequest != nil {
+      request.setValue("bytes=0-0", forHTTPHeaderField: "Range")
     }
 
     return request
@@ -181,3 +180,4 @@ private final class LoadingRequestBox: @unchecked Sendable {
     self.request = request
   }
 }
+#endif

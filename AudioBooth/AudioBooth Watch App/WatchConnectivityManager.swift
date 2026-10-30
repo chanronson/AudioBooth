@@ -776,6 +776,17 @@ extension WatchConnectivityManager: WCSessionDelegate {
   }
 
   func session(_ session: WCSession, didReceive file: WCSessionFile) {
+    guard
+      let fileSize = try? file.fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize,
+      fileSize <= ClientCertificateImporter.maximumFileSize
+    else {
+      AppLogger.watchConnectivity.error("Received client certificate file larger than the maximum size")
+      Task { @MainActor in
+        completeBackgroundTasksIfNeeded()
+      }
+      return
+    }
+
     guard let data = try? Data(contentsOf: file.fileURL) else {
       AppLogger.watchConnectivity.error("Failed to read client certificate file from iPhone")
       Task { @MainActor in

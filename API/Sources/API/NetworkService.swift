@@ -41,10 +41,10 @@ public enum NetworkError: LocalizedError {
         "The internet connection appears to be offline. If connecting to a local address, check that Local Network access is enabled in Settings → Privacy & Security → Local Network."
     case .clientCertificateRequired:
       return
-        "This server requires a client certificate. Open Server > Client Certificate and import a valid certificate."
+        "This server requires a client certificate. Open Server > Advanced > Client Certificate and import a valid certificate."
     case .clientCertificateRejected:
       return
-        "The server rejected the client certificate. Open Server > Client Certificate and check the certificate."
+        "The server rejected the client certificate. Open Server > Advanced > Client Certificate and check the certificate."
     }
   }
 
