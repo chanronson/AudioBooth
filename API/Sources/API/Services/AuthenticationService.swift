@@ -299,13 +299,12 @@ public final class AuthenticationService: ObservableObject {
         endpoints: server.certificateAllowedHosts,
         reference: reference
       )
+      ImagePipeline.shared = .audioBooth(
+        customHeaders: server.customHeaders,
+        clientCertificate: reference,
+        allowedHosts: server.certificateAllowedHosts
+      )
     }
-
-    ImagePipeline.shared = .audioBooth(
-      customHeaders: server.customHeaders,
-      clientCertificate: reference,
-      allowedHosts: server.certificateAllowedHosts
-    )
   }
 
   func refreshRedactedHosts() {
@@ -328,11 +327,13 @@ public final class AuthenticationService: ObservableObject {
 
     server.customHeaders = customHeaders
 
-    ImagePipeline.shared = .audioBooth(
-      customHeaders: customHeaders,
-      clientCertificate: server.clientCertificate,
-      allowedHosts: server.certificateAllowedHosts
-    )
+    if server.id == self.server?.id {
+      ImagePipeline.shared = .audioBooth(
+        customHeaders: customHeaders,
+        clientCertificate: server.clientCertificate,
+        allowedHosts: server.certificateAllowedHosts
+      )
+    }
 
     var allConnections = connections
     allConnections[serverID] = Connection(server)
