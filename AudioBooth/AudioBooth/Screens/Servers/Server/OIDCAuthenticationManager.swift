@@ -9,12 +9,22 @@ final class OIDCAuthenticationManager {
   private let serverURL: String
   private let pkce: PKCE
   private let customHeaders: [String: String]
+  private let clientCertificate: ClientCertificateReference?
+  private let allowedHosts: Set<String>
   private let existingServerID: String?
 
-  init(serverURL: String, customHeaders: [String: String] = [:], existingServerID: String? = nil) {
+  init(
+    serverURL: String,
+    customHeaders: [String: String] = [:],
+    clientCertificate: ClientCertificateReference? = nil,
+    allowedHosts: Set<String> = [],
+    existingServerID: String? = nil
+  ) {
     self.serverURL = serverURL
     self.pkce = PKCE()
     self.customHeaders = customHeaders
+    self.clientCertificate = clientCertificate
+    self.allowedHosts = allowedHosts
     self.existingServerID = existingServerID
   }
 
