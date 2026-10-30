@@ -683,9 +683,12 @@ extension WatchConnectivityManager: WCSessionDelegate {
   }
 
   func session(_ session: WCSession, didFinish fileTransfer: WCSessionFileTransfer, error: Error?) {
+    guard fileTransfer.file.metadata?["command"] as? String == "clientCertificate" else { return }
+
     try? FileManager.default.removeItem(at: fileTransfer.file.fileURL)
 
     if let error {
+      lastSentCertificateID = nil
       AppLogger.watchConnectivity.error("Client certificate transfer to watch failed: \(error)")
     }
   }

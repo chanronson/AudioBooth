@@ -199,6 +199,7 @@ final class ServerViewModel: ServerView.Model {
           server.id,
           reference: reference
         )
+        WatchConnectivityManager.shared.updateContext()
       } else {
         if let previous = self.pendingClientCertificate, previous.id != reference?.id {
           ClientCertificateStore.shared.delete(id: previous.id)
@@ -262,6 +263,7 @@ final class ServerViewModel: ServerView.Model {
         pendingConnectionID = connectionID
         server = audiobookshelf.authentication.servers[connectionID]
         pendingClientCertificate = nil
+        WatchConnectivityManager.shared.updateContext()
         authenticationModel = nil
         await fetchLibraries()
       } catch {
@@ -298,6 +300,7 @@ final class ServerViewModel: ServerView.Model {
         pendingConnectionID = connectionID
         server = audiobookshelf.authentication.servers[connectionID]
         pendingClientCertificate = nil
+        WatchConnectivityManager.shared.updateContext()
         authenticationModel = nil
         await fetchLibraries()
       } catch {
@@ -344,6 +347,7 @@ final class ServerViewModel: ServerView.Model {
         pendingConnectionID = connectionID
         server = audiobookshelf.authentication.servers[connectionID]
         pendingClientCertificate = nil
+        WatchConnectivityManager.shared.updateContext()
         authModel.isLoading = false
         authenticationModel = nil
         Toast(success: "Successfully authenticated with SSO").show()
