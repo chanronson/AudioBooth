@@ -22,6 +22,7 @@ AudioBooth is a streamlined iOS client designed exclusively for Audiobookshelf u
 - **Background Playback** - Continue listening while using other apps
 - **Lock Screen Controls** - Standard media controls on your lock screen
 - **Apple Watch Support** - Control playback and browse your library from your wrist
+- **mTLS client-certificate authentication** - Use a PKCS#12 client certificate for servers that require mutual TLS ([guide](docs/mtls.md))
 - **Clean, Native Design** - Intuitive interface that feels at home on iOS
 
 AudioBooth focuses on what matters most: enjoying your audiobooks. No unnecessary features, no bloat - just a reliable, efficient way to access your Audiobookshelf library on your iPhone, iPad, and Apple Watch.
