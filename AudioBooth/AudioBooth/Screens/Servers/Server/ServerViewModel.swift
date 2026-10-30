@@ -322,12 +322,20 @@ final class ServerViewModel: ServerView.Model {
 
     authModel.isLoading = true
 
+    let allowedHosts: Set<String> = {
+      guard let url = URL(string: normalizedURL),
+        let endpoint = ClientCertificateEndpoint(url: url)
+      else {
+        return []
+      }
+      return [endpoint.key]
+    }()
+
     let authManager = OIDCAuthenticationManager(
       serverURL: normalizedURL,
       customHeaders: headers,
       clientCertificate: pendingClientCertificate ?? server?.clientCertificate,
-      allowedHosts: ClientCertificateEndpoint(url: URL(string: normalizedURL)!)
-        .map { Set([$0.key]) } ?? []
+      allowedHosts: allowedHosts
     )
 
     Task {
