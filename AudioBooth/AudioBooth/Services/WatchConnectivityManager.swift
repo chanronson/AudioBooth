@@ -15,6 +15,7 @@ final class WatchConnectivityManager: NSObject, ObservableObject {
   private var lastQueuedDownloadsRefresh: Date?
   private var lastComplicationTransfer: (savedAt: Date, currentTime: Double, rate: Float)?
   private var rateTransferTask: Task<Void, Never>?
+  private var lastSentCertificateID: String?
 
   private var syncedLocalSessions: [String: Double] {
     didSet { UserDefaults.standard.set(syncedLocalSessions, forKey: Keys.syncedLocalSessions) }
@@ -199,6 +200,52 @@ final class WatchConnectivityManager: NSObject, ObservableObject {
         "Failed to sync context to watch: \(error)"
       )
     }
+
+    sendClientCertificateToWatchIfNeeded()
+  }
+
+  private func sendClientCertificateToWatchIfNeeded(force: Bool = false) {
+    guard let session, session.activationState == .activated, session.isPaired, session.isWatchAppInstalled else {
+      return
+    }
+
+    guard let reference = Audiobookshelf.shared.authentication.server?.clientCertificate else {
+      lastSentCertificateID = nil
+      return
+    }
+
+    guard force || reference.id != lastSentCertificateID else { return }
+
+    guard let stored = ClientCertificateStore.shared.load(id: reference.id) else {
+      AppLogger.watchConnectivity.warning(
+        "Client certificate \(reference.id) is not available for watch transfer"
+      )
+      lastSentCertificateID = nil
+      return
+    }
+
+    let fileURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("client-certificate-\(reference.id)-\(UUID().uuidString).p12")
+
+    do {
+      try stored.p12Data.write(to: fileURL, options: .atomic)
+    } catch {
+      AppLogger.watchConnectivity.error("Failed to prepare client certificate for watch transfer: \(error)")
+      lastSentCertificateID = nil
+      return
+    }
+
+    let metadata: [String: Any] = [
+      "command": "clientCertificate",
+      "id": reference.id,
+      "displayName": reference.displayName,
+      "fingerprint": reference.fingerprintSHA256,
+      "importedAt": reference.importedAt.timeIntervalSince1970,
+      "password": stored.password,
+    ]
+
+    session.transferFile(fileURL, metadata: metadata)
+    lastSentCertificateID = reference.id
   }
 
   private var isPhonePlaying: Bool {
@@ -569,6 +616,8 @@ extension WatchConnectivityManager: WCSessionDelegate {
         }
       case "refreshContinueListening":
         refreshContinueListening()
+      case "requestClientCertificate":
+        sendClientCertificateToWatchIfNeeded(force: true)
       case "syncDownloadedBooks":
         if let bookIDs = message["bookIDs"] as? [String] {
           updateWatchDownloadStatus(downloaded: bookIDs, queued: watchQueuedBookIDs)
@@ -623,8 +672,21 @@ extension WatchConnectivityManager: WCSessionDelegate {
         refreshProgress()
       }
 
+    case "requestClientCertificate":
+      Task { @MainActor in
+        sendClientCertificateToWatchIfNeeded(force: true)
+      }
+
     default:
       break
+    }
+  }
+
+  func session(_ session: WCSession, didFinish fileTransfer: WCSessionFileTransfer, error: Error?) {
+    try? FileManager.default.removeItem(at: fileTransfer.file.fileURL)
+
+    if let error {
+      AppLogger.watchConnectivity.error("Client certificate transfer to watch failed: \(error)")
     }
   }
 

@@ -63,6 +63,7 @@ final class WatchConnectivityManager: NSObject, ObservableObject {
   private var phonePlayback: PhonePlayback?
   private let phonePlaybackMaxAge: TimeInterval = 3600
   private var connectionData: Data?
+  private var activeCertificateID: String?
 
   var customHeaders: [String: String] {
     Audiobookshelf.shared.authentication.server?.customHeaders ?? [:]
@@ -763,6 +764,75 @@ extension WatchConnectivityManager: WCSessionDelegate {
     }
   }
 
+  func session(_ session: WCSession, didReceive file: WCSessionFile) {
+    guard let data = try? Data(contentsOf: file.fileURL) else {
+      AppLogger.watchConnectivity.error("Failed to read client certificate file from iPhone")
+      return
+    }
+
+    let metadata = file.metadata ?? [:]
+    Task { @MainActor in
+      handleClientCertificate(metadata: metadata, data: data)
+      completeBackgroundTasksIfNeeded()
+    }
+  }
+
+  private func handleClientCertificate(metadata: [String: Any], data: Data) {
+    guard metadata["command"] as? String == "clientCertificate",
+      let id = metadata["id"] as? String,
+      let displayName = metadata["displayName"] as? String,
+      let fingerprint = metadata["fingerprint"] as? String,
+      let importedAt = metadata["importedAt"] as? TimeInterval,
+      let password = metadata["password"] as? String
+    else {
+      AppLogger.watchConnectivity.error("Received invalid client certificate metadata from iPhone")
+      return
+    }
+
+    let activeReference = Audiobookshelf.shared.authentication.server?.clientCertificate
+    if let activeReference, activeReference.id != id {
+      AppLogger.watchConnectivity.warning("Ignored stale client certificate \(id) from iPhone")
+      return
+    }
+
+    let reference = ClientCertificateReference(
+      id: id,
+      displayName: displayName,
+      fingerprintSHA256: fingerprint,
+      importedAt: Date(timeIntervalSince1970: importedAt)
+    )
+
+    if let activeCertificateID, activeCertificateID != id {
+      ClientCertificateStore.shared.delete(id: activeCertificateID)
+    }
+
+    do {
+      try ClientCertificateStore.shared.save(
+        StoredClientCertificate(
+          reference: reference,
+          p12Data: data,
+          password: password
+        )
+      )
+    } catch {
+      AppLogger.watchConnectivity.error("Failed to save client certificate from iPhone: \(error)")
+      return
+    }
+
+    activeCertificateID = id
+
+    let server = Audiobookshelf.shared.authentication.server
+    let allowedHosts = server?.certificateAllowedHosts ?? []
+    ClientCertificateRegistry.shared.update(endpoints: allowedHosts, reference: reference)
+    ImagePipeline.shared = .watch(
+      customHeaders: server?.customHeaders,
+      clientCertificate: reference,
+      allowedHosts: allowedHosts
+    )
+
+    AppLogger.watchConnectivity.info("Stored client certificate \(id) from iPhone")
+  }
+
   func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {
     Task { @MainActor in
       handleMessage(message)
@@ -812,8 +882,10 @@ extension WatchConnectivityManager: WCSessionDelegate {
       connectionData = nil
       if let serverID = authentication.server?.id {
         authentication.removeServer(serverID)
-        ImagePipeline.shared = .watch(customHeaders: nil, allowedHosts: [])
       }
+      removeActiveClientCertificate()
+      ClientCertificateRegistry.shared.update(endpoints: [], reference: nil)
+      ImagePipeline.shared = .watch(customHeaders: nil, allowedHosts: [])
       return
     }
 
@@ -823,11 +895,37 @@ extension WatchConnectivityManager: WCSessionDelegate {
       authentication.removeServer(current.id)
     }
     authentication.restoreConnection(connection)
+
+    let reference = connection.clientCertificate
+    if let activeCertificateID, activeCertificateID != reference?.id {
+      ClientCertificateStore.shared.delete(id: activeCertificateID)
+      self.activeCertificateID = nil
+    }
+
+    let allowedHosts = authentication.server?.certificateAllowedHosts ?? []
+    ClientCertificateRegistry.shared.update(endpoints: allowedHosts, reference: reference)
     ImagePipeline.shared = .watch(
       customHeaders: connection.customHeaders,
-      clientCertificate: connection.clientCertificate,
-      allowedHosts: authentication.server?.certificateAllowedHosts ?? []
+      clientCertificate: reference,
+      allowedHosts: allowedHosts
     )
+    activeCertificateID = reference?.id
+
+    if let reference, ClientCertificateStore.shared.load(id: reference.id) == nil {
+      requestClientCertificate()
+    }
+  }
+
+  private func removeActiveClientCertificate() {
+    guard let activeCertificateID else { return }
+    ClientCertificateStore.shared.delete(id: activeCertificateID)
+    self.activeCertificateID = nil
+  }
+
+  private func requestClientCertificate() {
+    guard let session, session.activationState == .activated else { return }
+    session.transferUserInfo(["command": "requestClientCertificate"])
+    AppLogger.watchConnectivity.info("Requested client certificate from iPhone")
   }
 
   private func handleMessage(_ message: [String: Any]) {
