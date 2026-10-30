@@ -113,7 +113,8 @@ nonisolated struct BookShareItem: Transferable, Identifiable {
   }
 
   private func downloadEbook(from remoteURL: URL, named filename: String) async throws -> URL {
-    let (downloadedURL, _) = try await URLSession.shared.download(from: remoteURL)
+    let session = await ServerSession.current()
+    let (downloadedURL, _) = try await session.download(from: remoteURL, delegate: nil)
 
     let fm = FileManager.default
     let directory = fm.temporaryDirectory.appendingPathComponent("ShareEbook", isDirectory: true)

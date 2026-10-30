@@ -106,6 +106,7 @@ final class OIDCAuthenticationManager {
       state: state,
       cookies: cookies,
       customHeaders: customHeaders,
+      clientCertificate: clientCertificate,
       existingServerID: existingServerID
     )
 
@@ -159,7 +160,10 @@ final class OIDCAuthenticationManager {
     let config = URLSessionConfiguration.ephemeral
     let session = URLSession(
       configuration: config,
-      delegate: NoRedirectDelegate(),
+      delegate: OIDCSessionDelegate(
+        clientCertificate: clientCertificate,
+        allowedHosts: allowedHosts
+      ),
       delegateQueue: nil
     )
 
@@ -260,7 +264,18 @@ enum OIDCError: LocalizedError {
   }
 }
 
-final class NoRedirectDelegate: NSObject, URLSessionTaskDelegate {
+final class OIDCSessionDelegate: NSObject, URLSessionTaskDelegate {
+  private let clientCertificate: ClientCertificateReference?
+  private let allowedHosts: Set<String>
+
+  init(
+    clientCertificate: ClientCertificateReference?,
+    allowedHosts: Set<String>
+  ) {
+    self.clientCertificate = clientCertificate
+    self.allowedHosts = allowedHosts
+  }
+
   func urlSession(
     _ session: URLSession,
     task: URLSessionTask,
@@ -269,5 +284,38 @@ final class NoRedirectDelegate: NSObject, URLSessionTaskDelegate {
     completionHandler: @escaping (URLRequest?) -> Void
   ) {
     completionHandler(nil)
+  }
+
+  func urlSession(
+    _ session: URLSession,
+    task: URLSessionTask,
+    didReceive challenge: URLAuthenticationChallenge,
+    completionHandler: @escaping @Sendable (
+      URLSession.AuthChallengeDisposition,
+      URLCredential?
+    ) -> Void
+  ) {
+    let port = challenge.protectionSpace.port > 0
+      ? challenge.protectionSpace.port
+      : 443
+
+    guard
+      challenge.protectionSpace.authenticationMethod
+        == NSURLAuthenticationMethodClientCertificate,
+      let clientCertificate,
+      let endpoint = ClientCertificateEndpoint(
+        host: challenge.protectionSpace.host,
+        port: port
+      ),
+      allowedHosts.contains(endpoint.key),
+      let credential = ClientCertificateCredentialProvider.credential(
+        for: clientCertificate
+      )
+    else {
+      completionHandler(.performDefaultHandling, nil)
+      return
+    }
+
+    completionHandler(.useCredential, credential)
   }
 }

@@ -812,7 +812,7 @@ extension WatchConnectivityManager: WCSessionDelegate {
       connectionData = nil
       if let serverID = authentication.server?.id {
         authentication.removeServer(serverID)
-        ImagePipeline.shared = .watch(customHeaders: nil)
+        ImagePipeline.shared = .watch(customHeaders: nil, allowedHosts: [])
       }
       return
     }
@@ -823,7 +823,11 @@ extension WatchConnectivityManager: WCSessionDelegate {
       authentication.removeServer(current.id)
     }
     authentication.restoreConnection(connection)
-    ImagePipeline.shared = .watch(customHeaders: connection.customHeaders)
+    ImagePipeline.shared = .watch(
+      customHeaders: connection.customHeaders,
+      clientCertificate: connection.clientCertificate,
+      allowedHosts: authentication.server?.certificateAllowedHosts ?? []
+    )
   }
 
   private func handleMessage(_ message: [String: Any]) {

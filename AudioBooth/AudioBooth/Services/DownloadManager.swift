@@ -1039,6 +1039,40 @@ private final class DownloadSessionDelegate: NSObject, URLSessionDownloadDelegat
     }
   }
 
+  nonisolated func urlSession(
+    _ session: URLSession,
+    task: URLSessionTask,
+    didReceive challenge: URLAuthenticationChallenge,
+    completionHandler: @escaping @Sendable (
+      URLSession.AuthChallengeDisposition,
+      URLCredential?
+    ) -> Void
+  ) {
+    let port = challenge.protectionSpace.port > 0
+      ? challenge.protectionSpace.port
+      : 443
+
+    guard
+      challenge.protectionSpace.authenticationMethod
+        == NSURLAuthenticationMethodClientCertificate,
+      let endpoint = ClientCertificateEndpoint(
+        host: challenge.protectionSpace.host,
+        port: port
+      ),
+      let reference = ClientCertificateRegistry.shared.reference(
+        forEndpoint: endpoint.key
+      ),
+      let credential = ClientCertificateCredentialProvider.credential(
+        for: reference
+      )
+    else {
+      completionHandler(.performDefaultHandling, nil)
+      return
+    }
+
+    completionHandler(.useCredential, credential)
+  }
+
   nonisolated func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
     guard let error, let relativePath = task.taskDescription else { return }
 

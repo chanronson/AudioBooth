@@ -1,3 +1,4 @@
+import API
 import Combine
 import Foundation
 import OSLog
@@ -538,6 +539,40 @@ extension DownloadManager: URLSessionDownloadDelegate {
     if storedBook(info.bookID)?.isDownloaded == true {
       AppLogger.download.info("Download completed for \(info.bookID)")
     }
+  }
+
+  nonisolated func urlSession(
+    _ session: URLSession,
+    task: URLSessionTask,
+    didReceive challenge: URLAuthenticationChallenge,
+    completionHandler: @escaping @Sendable (
+      URLSession.AuthChallengeDisposition,
+      URLCredential?
+    ) -> Void
+  ) {
+    let port = challenge.protectionSpace.port > 0
+      ? challenge.protectionSpace.port
+      : 443
+
+    guard
+      challenge.protectionSpace.authenticationMethod
+        == NSURLAuthenticationMethodClientCertificate,
+      let endpoint = ClientCertificateEndpoint(
+        host: challenge.protectionSpace.host,
+        port: port
+      ),
+      let reference = ClientCertificateRegistry.shared.reference(
+        forEndpoint: endpoint.key
+      ),
+      let credential = ClientCertificateCredentialProvider.credential(
+        for: reference
+      )
+    else {
+      completionHandler(.performDefaultHandling, nil)
+      return
+    }
+
+    completionHandler(.useCredential, credential)
   }
 
   func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
