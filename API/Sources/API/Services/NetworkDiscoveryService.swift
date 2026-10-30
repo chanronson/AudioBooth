@@ -7,9 +7,10 @@ public final class NetworkDiscoveryService: @unchecked Sendable {
 
   public func fetchServerStatus(
     serverURL: URL,
-    headers: [String: String]
+    headers: [String: String],
+    clientCertificate: ClientCertificateReference? = nil
   ) async throws -> ServerStatus {
-    let client = NetworkService(baseURL: serverURL)
+    let client = NetworkService(baseURL: serverURL, clientCertificate: clientCertificate)
 
     let request = NetworkRequest<ServerStatus>(
       path: "/status",

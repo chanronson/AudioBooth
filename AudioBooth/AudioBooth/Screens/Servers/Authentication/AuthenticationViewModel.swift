@@ -29,6 +29,7 @@ final class AuthenticationViewModel: AuthenticationView.Model {
           username: username.trimmingCharacters(in: .whitespacesAndNewlines),
           password: password,
           customHeaders: server.customHeaders,
+          clientCertificate: server.clientCertificate,
           existingServerID: server.id
         )
         password = ""
@@ -55,6 +56,7 @@ final class AuthenticationViewModel: AuthenticationView.Model {
           serverURL: server.baseURL.absoluteString,
           apiKey: trimmedKey,
           customHeaders: server.customHeaders,
+          clientCertificate: server.clientCertificate,
           existingServerID: server.id
         )
         apiKey = ""
@@ -75,6 +77,8 @@ final class AuthenticationViewModel: AuthenticationView.Model {
     let authManager = OIDCAuthenticationManager(
       serverURL: server.baseURL.absoluteString,
       customHeaders: server.customHeaders,
+      clientCertificate: server.clientCertificate,
+      allowedHosts: server.certificateAllowedHosts,
       existingServerID: server.id
     )
 

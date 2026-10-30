@@ -13,6 +13,7 @@ final class ServerViewModel: ServerView.Model {
   private var libraryData: [API.Library] = []
   private var server: Server?
   private var pendingConnectionID: String?
+  private var pendingClientCertificate: ClientCertificateReference?
 
   private final class NewServerAuthViewModel: AuthenticationView.Model {
     weak var parent: ServerViewModel?
@@ -43,6 +44,7 @@ final class ServerViewModel: ServerView.Model {
     self.server = nil
 
     let customHeadersVM = CustomHeadersViewModel(initialHeaders: exportConnection.headers)
+    let certificateViewModel = ClientCertificateViewModel(reference: nil)
 
     super.init(
       serverURL: exportConnection.url.absoluteString,
@@ -54,8 +56,11 @@ final class ServerViewModel: ServerView.Model {
       status: nil,
       username: nil,
       canExportConnection: false,
-      connectionSharingModel: nil
+      connectionSharingModel: nil,
+      clientCertificate: certificateViewModel
     )
+
+    configureClientCertificateUpdates()
 
     customHeadersVM.onHeadersChanged = { [weak self] headers in
       guard let self, let serverID = self.server?.id else { return }
@@ -137,6 +142,10 @@ final class ServerViewModel: ServerView.Model {
       alternativeURLModel = AlternativeURLView.Model()
     }
 
+    let certificateViewModel = ClientCertificateViewModel(
+      reference: server?.clientCertificate
+    )
+
     super.init(
       serverURL: serverURL,
       customHeaders: CustomHeadersViewModel(initialHeaders: customHeaders),
@@ -149,8 +158,11 @@ final class ServerViewModel: ServerView.Model {
       username: username,
       serverVersion: server?.serverVersion,
       canExportConnection: canExportConnection,
-      connectionSharingModel: connectionSharingModel
+      connectionSharingModel: connectionSharingModel,
+      clientCertificate: certificateViewModel
     )
+
+    configureClientCertificateUpdates()
 
     if let customHeadersVM = self.customHeaders as? CustomHeadersViewModel {
       customHeadersVM.onHeadersChanged = { [weak self] headers in
@@ -174,6 +186,24 @@ final class ServerViewModel: ServerView.Model {
         Task {
           await self?.fetchLibraries()
         }
+      }
+    }
+  }
+
+  private func configureClientCertificateUpdates() {
+    clientCertificate.onCertificateChanged = { [weak self] reference in
+      guard let self else { return }
+
+      if let server = self.server {
+        self.audiobookshelf.authentication.updateClientCertificate(
+          server.id,
+          reference: reference
+        )
+      } else {
+        if let previous = self.pendingClientCertificate, previous.id != reference?.id {
+          ClientCertificateStore.shared.delete(id: previous.id)
+        }
+        self.pendingClientCertificate = reference
       }
     }
   }
@@ -225,11 +255,13 @@ final class ServerViewModel: ServerView.Model {
           serverURL: normalizedURL,
           username: username.trimmingCharacters(in: .whitespacesAndNewlines),
           password: password,
-          customHeaders: headers
+          customHeaders: headers,
+          clientCertificate: pendingClientCertificate ?? server?.clientCertificate
         )
         authModel.password = ""
         pendingConnectionID = connectionID
         server = audiobookshelf.authentication.servers[connectionID]
+        pendingClientCertificate = nil
         authenticationModel = nil
         await fetchLibraries()
       } catch {
@@ -259,11 +291,13 @@ final class ServerViewModel: ServerView.Model {
         let connectionID = try await audiobookshelf.authentication.loginWithAPIKey(
           serverURL: normalizedURL,
           apiKey: trimmedKey,
-          customHeaders: headers
+          customHeaders: headers,
+          clientCertificate: pendingClientCertificate ?? server?.clientCertificate
         )
         authModel.apiKey = ""
         pendingConnectionID = connectionID
         server = audiobookshelf.authentication.servers[connectionID]
+        pendingClientCertificate = nil
         authenticationModel = nil
         await fetchLibraries()
       } catch {
@@ -290,7 +324,10 @@ final class ServerViewModel: ServerView.Model {
 
     let authManager = OIDCAuthenticationManager(
       serverURL: normalizedURL,
-      customHeaders: headers
+      customHeaders: headers,
+      clientCertificate: pendingClientCertificate ?? server?.clientCertificate,
+      allowedHosts: ClientCertificateEndpoint(url: URL(string: normalizedURL)!)
+        .map { Set([$0.key]) } ?? []
     )
 
     Task {
@@ -298,6 +335,7 @@ final class ServerViewModel: ServerView.Model {
         let connectionID = try await authManager.start(using: session)
         pendingConnectionID = connectionID
         server = audiobookshelf.authentication.servers[connectionID]
+        pendingClientCertificate = nil
         authModel.isLoading = false
         authenticationModel = nil
         Toast(success: "Successfully authenticated with SSO").show()
@@ -398,7 +436,8 @@ final class ServerViewModel: ServerView.Model {
 
         let status = try await audiobookshelf.networkDiscovery.fetchServerStatus(
           serverURL: serverURL,
-          headers: headers
+          headers: headers,
+          clientCertificate: pendingClientCertificate ?? server?.clientCertificate
         )
         updateAuthenticationModel(with: status)
       } catch {
@@ -460,6 +499,12 @@ final class ServerViewModel: ServerView.Model {
     audiobookshelf.logout(serverID: serverID)
     WatchConnectivityManager.shared.updateContext()
     server = nil
+
+    if let pendingClientCertificate {
+      ClientCertificateStore.shared.delete(id: pendingClientCertificate.id)
+    }
+    pendingClientCertificate = nil
+    clientCertificate.reference = nil
 
     let newAuthModel = NewServerAuthViewModel(parent: self)
     newAuthModel.onAuthenticationSuccess = { [weak self] in
