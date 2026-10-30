@@ -12,4 +12,12 @@ enum ServerSession {
       discretionary: discretionary
     )
   }
+
+  static func download() -> any URLSessionProtocol {
+    let server = Audiobookshelf.shared.authentication.server
+    return ClientCertificateSessionProvider.shared.downloadSession(
+      for: server?.clientCertificate,
+      allowedHosts: server?.certificateAllowedHosts ?? []
+    )
+  }
 }

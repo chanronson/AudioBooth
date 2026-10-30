@@ -36,8 +36,38 @@ public final class ClientCertificateSessionProvider: @unchecked Sendable {
       allowedHosts: allowedHosts
     )
     let session = Self.makeSession(
-      delegate: handler,
-      discretionary: discretionary
+      configuration: Self.configuration(discretionary: discretionary),
+      delegate: handler
+    )
+    sessions[key] = session
+    return session
+  }
+
+  public func downloadSession(
+    for reference: ClientCertificateReference?,
+    allowedHosts: Set<String>
+  ) -> any URLSessionProtocol {
+    guard let reference else {
+      return Self.baseDownloadSession
+    }
+
+    let hosts = allowedHosts.sorted().joined(separator: ",")
+    let key = "download|\(reference.id)|\(hosts)"
+
+    lock.lock()
+    defer { lock.unlock() }
+
+    if let cached = sessions[key] {
+      return cached
+    }
+
+    let handler = ClientCertificateChallengeHandler(
+      certificateID: reference.id,
+      allowedHosts: allowedHosts
+    )
+    let session = Self.makeSession(
+      configuration: Self.downloadConfiguration(),
+      delegate: handler
     )
     sessions[key] = session
     return session
@@ -45,9 +75,12 @@ public final class ClientCertificateSessionProvider: @unchecked Sendable {
 
   public func invalidate(certificateID: String) {
     let prefix = "\(certificateID)|"
+    let downloadPrefix = "download|\(certificateID)|"
     lock.lock()
     defer { lock.unlock() }
-    sessions = sessions.filter { !$0.key.hasPrefix(prefix) }
+    sessions = sessions.filter {
+      !$0.key.hasPrefix(prefix) && !$0.key.hasPrefix(downloadPrefix)
+    }
   }
 
   private static func cacheKey(
@@ -60,15 +93,13 @@ public final class ClientCertificateSessionProvider: @unchecked Sendable {
   }
 
   private static func makeSession(
-    delegate: URLSessionDelegate,
-    discretionary: Bool
+    configuration: URLSessionConfiguration,
+    delegate: URLSessionDelegate
   ) -> any URLSessionProtocol {
-    let config = configuration(discretionary: discretionary)
-
     #if os(watchOS)
-    return URLSession(configuration: config, delegate: delegate, delegateQueue: nil)
+    return URLSession(configuration: configuration, delegate: delegate, delegateQueue: nil)
     #else
-    return URLSessionProxy(configuration: config, delegate: delegate, delegateQueue: nil)
+    return URLSessionProxy(configuration: configuration, delegate: delegate, delegateQueue: nil)
     #endif
   }
 
@@ -100,6 +131,14 @@ public final class ClientCertificateSessionProvider: @unchecked Sendable {
     return config
   }
 
+  private static func downloadConfiguration() -> URLSessionConfiguration {
+    let config = URLSessionConfiguration.default
+    config.timeoutIntervalForRequest = 60
+    config.timeoutIntervalForResource = 604800
+    config.httpAdditionalHeaders = ["User-Agent": userAgent]
+    return config
+  }
+
   private static let baseSession: URLSessionProtocol = {
     let config = configuration(discretionary: false)
 
@@ -112,6 +151,16 @@ public final class ClientCertificateSessionProvider: @unchecked Sendable {
 
   private static let baseDiscretionarySession: URLSessionProtocol = {
     let config = configuration(discretionary: true)
+
+    #if os(watchOS)
+    return URLSession(configuration: config)
+    #else
+    return URLSessionProxy(configuration: config)
+    #endif
+  }()
+
+  private static let baseDownloadSession: URLSessionProtocol = {
+    let config = downloadConfiguration()
 
     #if os(watchOS)
     return URLSession(configuration: config)

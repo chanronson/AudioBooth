@@ -789,7 +789,7 @@ extension EbookReaderViewModel {
   }
 
   private func downloadTemporaryFile(from url: URL) async throws -> URL {
-    let session = await ServerSession.current()
+    let session = await ServerSession.download()
     let (tempURL, _) = try await session.download(from: url, delegate: nil)
 
     let tempDirectory = FileManager.default.temporaryDirectory
