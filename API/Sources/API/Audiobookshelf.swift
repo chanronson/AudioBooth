@@ -30,7 +30,11 @@ public final class Audiobookshelf {
   private init() {
     setupNetworkService()
 
-    ImagePipeline.shared = .audioBooth(customHeaders: authentication.server?.customHeaders)
+    ImagePipeline.shared = .audioBooth(
+      customHeaders: authentication.server?.customHeaders,
+      clientCertificate: authentication.server?.clientCertificate,
+      allowedHosts: authentication.server?.certificateAllowedHosts ?? []
+    )
   }
 
   public func logout(serverID: String) {
