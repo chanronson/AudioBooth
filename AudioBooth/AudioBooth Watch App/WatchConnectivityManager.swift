@@ -63,7 +63,17 @@ final class WatchConnectivityManager: NSObject, ObservableObject {
   private var phonePlayback: PhonePlayback?
   private let phonePlaybackMaxAge: TimeInterval = 3600
   private var connectionData: Data?
-  private var activeCertificateID: String?
+
+  private var activeCertificateID: String? {
+    get { UserDefaults.standard.string(forKey: Keys.activeCertificateID) }
+    set {
+      if let newValue {
+        UserDefaults.standard.set(newValue, forKey: Keys.activeCertificateID)
+      } else {
+        UserDefaults.standard.removeObject(forKey: Keys.activeCertificateID)
+      }
+    }
+  }
 
   var customHeaders: [String: String] {
     Audiobookshelf.shared.authentication.server?.customHeaders ?? [:]
@@ -101,6 +111,7 @@ final class WatchConnectivityManager: NSObject, ObservableObject {
     static let progressUpdatedAt = "progress_updated_at"
     static let skipForwardInterval = "skip_forward_interval"
     static let skipBackwardInterval = "skip_backward_interval"
+    static let activeCertificateID = "active_certificate_id"
   }
 
   var isReachable: Bool {
@@ -789,8 +800,9 @@ extension WatchConnectivityManager: WCSessionDelegate {
       return
     }
 
-    let activeReference = Audiobookshelf.shared.authentication.server?.clientCertificate
-    if let activeReference, activeReference.id != id {
+    guard let activeReference = Audiobookshelf.shared.authentication.server?.clientCertificate,
+      activeReference.id == id
+    else {
       AppLogger.watchConnectivity.warning("Ignored stale client certificate \(id) from iPhone")
       return
     }
@@ -802,10 +814,7 @@ extension WatchConnectivityManager: WCSessionDelegate {
       importedAt: Date(timeIntervalSince1970: importedAt)
     )
 
-    if let activeCertificateID, activeCertificateID != id {
-      ClientCertificateStore.shared.delete(id: activeCertificateID)
-    }
-
+    let previousID = activeCertificateID
     do {
       try ClientCertificateStore.shared.save(
         StoredClientCertificate(
@@ -817,6 +826,10 @@ extension WatchConnectivityManager: WCSessionDelegate {
     } catch {
       AppLogger.watchConnectivity.error("Failed to save client certificate from iPhone: \(error)")
       return
+    }
+
+    if let previousID, previousID != id {
+      ClientCertificateStore.shared.delete(id: previousID)
     }
 
     activeCertificateID = id

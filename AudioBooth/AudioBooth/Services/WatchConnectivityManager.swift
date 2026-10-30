@@ -466,7 +466,8 @@ final class WatchConnectivityManager: NSObject, ObservableObject {
       token: token,
       customHeaders: server.customHeaders,
       alternativeURL: server.alternativeURL,
-      isUsingAlternativeURL: server.isUsingAlternativeURL
+      isUsingAlternativeURL: server.isUsingAlternativeURL,
+      clientCertificate: server.clientCertificate
     )
     let encoder = JSONEncoder()
     encoder.outputFormatting = .sortedKeys
@@ -688,7 +689,9 @@ extension WatchConnectivityManager: WCSessionDelegate {
     try? FileManager.default.removeItem(at: fileTransfer.file.fileURL)
 
     if let error {
-      lastSentCertificateID = nil
+      if fileTransfer.file.metadata?["id"] as? String == lastSentCertificateID {
+        lastSentCertificateID = nil
+      }
       AppLogger.watchConnectivity.error("Client certificate transfer to watch failed: \(error)")
     }
   }
