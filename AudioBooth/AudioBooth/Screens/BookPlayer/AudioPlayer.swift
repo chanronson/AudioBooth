@@ -275,7 +275,13 @@ private extension AudioPlayer {
   }
 
   func trackIndex(for item: AVPlayerItem) -> Int? {
-    guard let url = (item.asset as? AVURLAsset)?.url else { return nil }
+    let url: URL?
+    if let asset = item.asset as? ClientCertificateAsset {
+      url = asset.originalURL
+    } else {
+      url = (item.asset as? AVURLAsset)?.url
+    }
+    guard let url else { return nil }
     return tracks.firstIndex { self.url(for: $0) == url }
   }
 
@@ -714,6 +720,19 @@ extension LevelingStrength {
 
 extension AVPlayerItem {
   convenience init(url: URL, headers: [String: String]?) {
+    let server = Audiobookshelf.shared.authentication.server
+    if !url.isFileURL, let reference = server?.clientCertificate {
+      self.init(
+        asset: ClientCertificateAsset(
+          url: url,
+          headers: headers ?? [:],
+          reference: reference,
+          allowedHosts: server?.certificateAllowedHosts ?? []
+        )
+      )
+      return
+    }
+
     var options: [String: Any] = [:]
     if !url.isFileURL, let headers, !headers.isEmpty {
       options["AVURLAssetHTTPHeaderFieldsKey"] = headers

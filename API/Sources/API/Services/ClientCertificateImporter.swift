@@ -7,6 +7,7 @@ public enum ClientCertificateImportError: LocalizedError, Equatable {
   case invalidFormat
   case wrongPassword
   case missingIdentity
+  case multipleIdentities
 
   public var errorDescription: String? {
     switch self {
@@ -18,6 +19,8 @@ public enum ClientCertificateImportError: LocalizedError, Equatable {
       return "The certificate password is incorrect."
     case .missingIdentity:
       return "The certificate file does not contain a private key."
+    case .multipleIdentities:
+      return "The certificate file contains more than one private key. Use a file with one identity."
     }
   }
 }
@@ -47,13 +50,11 @@ public enum ClientCertificateImporter {
       throw ClientCertificateImportError.invalidFormat
     }
 
-    guard
-      let entries = items as? [[String: Any]],
-      let entry = entries.first,
-      let identity = entry[kSecImportItemIdentity as String] as? SecIdentity
-    else {
+    guard let entries = items as? [[String: Any]] else {
       throw ClientCertificateImportError.missingIdentity
     }
+
+    let identity = try selectIdentity(from: entries)
 
     var certificate: SecCertificate?
     guard
@@ -85,5 +86,19 @@ public enum ClientCertificateImporter {
       p12Data: data,
       password: password
     )
+  }
+
+  static func selectIdentity(from entries: [[String: Any]]) throws -> SecIdentity {
+    let identities = entries.compactMap {
+      $0[kSecImportItemIdentity as String] as? SecIdentity
+    }
+
+    guard !identities.isEmpty else {
+      throw ClientCertificateImportError.missingIdentity
+    }
+    guard identities.count == 1 else {
+      throw ClientCertificateImportError.multipleIdentities
+    }
+    return identities[0]
   }
 }

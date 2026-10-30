@@ -51,6 +51,8 @@ final class WatchConnectivityManager: NSObject, ObservableObject {
       UserDefaults.standard.dictionary(forKey: Keys.watchEpisodePodcastIDs) as? [String: String] ?? [:]
     super.init()
 
+    Self.removeStaleClientCertificateFiles()
+
     context["syncedLocalSessions"] = syncedLocalSessions
 
     if WCSession.isSupported() {
@@ -235,6 +237,8 @@ final class WatchConnectivityManager: NSObject, ObservableObject {
       return
     }
 
+    Self.protectCertificateFile(at: fileURL)
+
     let metadata: [String: Any] = [
       "command": "clientCertificate",
       "id": reference.id,
@@ -246,6 +250,49 @@ final class WatchConnectivityManager: NSObject, ObservableObject {
 
     session.transferFile(fileURL, metadata: metadata)
     lastSentCertificateID = reference.id
+  }
+
+  private static func removeStaleClientCertificateFiles() {
+    let fileManager = FileManager.default
+    guard
+      let files = try? fileManager.contentsOfDirectory(
+        at: fileManager.temporaryDirectory,
+        includingPropertiesForKeys: nil
+      )
+    else {
+      return
+    }
+
+    for file in files
+    where file.lastPathComponent.hasPrefix("client-certificate-")
+      && file.pathExtension == "p12"
+    {
+      try? fileManager.removeItem(at: file)
+    }
+  }
+
+  private static func protectCertificateFile(at url: URL) {
+    do {
+      try FileManager.default.setAttributes(
+        [.protectionKey: FileProtectionType.complete],
+        ofItemAtPath: url.path
+      )
+    } catch {
+      AppLogger.watchConnectivity.error(
+        "Failed to set client certificate file protection: \(error)"
+      )
+    }
+
+    var resourceURL = url
+    var values = URLResourceValues()
+    values.isExcludedFromBackup = true
+    do {
+      try resourceURL.setResourceValues(values)
+    } catch {
+      AppLogger.watchConnectivity.error(
+        "Failed to exclude client certificate file from backup: \(error)"
+      )
+    }
   }
 
   private var isPhonePlaying: Bool {

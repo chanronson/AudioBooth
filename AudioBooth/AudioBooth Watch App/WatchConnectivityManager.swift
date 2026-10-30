@@ -778,6 +778,9 @@ extension WatchConnectivityManager: WCSessionDelegate {
   func session(_ session: WCSession, didReceive file: WCSessionFile) {
     guard let data = try? Data(contentsOf: file.fileURL) else {
       AppLogger.watchConnectivity.error("Failed to read client certificate file from iPhone")
+      Task { @MainActor in
+        completeBackgroundTasksIfNeeded()
+      }
       return
     }
 
@@ -789,6 +792,11 @@ extension WatchConnectivityManager: WCSessionDelegate {
   }
 
   private func handleClientCertificate(metadata: [String: Any], data: Data) {
+    guard data.count <= ClientCertificateImporter.maximumFileSize else {
+      AppLogger.watchConnectivity.error("Received client certificate file larger than the maximum size")
+      return
+    }
+
     guard metadata["command"] as? String == "clientCertificate",
       let id = metadata["id"] as? String,
       let displayName = metadata["displayName"] as? String,
@@ -804,6 +812,23 @@ extension WatchConnectivityManager: WCSessionDelegate {
       activeReference.id == id
     else {
       AppLogger.watchConnectivity.warning("Ignored stale client certificate \(id) from iPhone")
+      return
+    }
+
+    do {
+      let imported = try ClientCertificateImporter.importPKCS12(
+        data: data,
+        password: password,
+        displayName: displayName
+      )
+      guard imported.reference.fingerprintSHA256 == fingerprint.lowercased() else {
+        AppLogger.watchConnectivity.error(
+          "Received client certificate fingerprint does not match the iPhone metadata"
+        )
+        return
+      }
+    } catch {
+      AppLogger.watchConnectivity.error("Failed to import client certificate from iPhone: \(error)")
       return
     }
 
@@ -935,7 +960,7 @@ extension WatchConnectivityManager: WCSessionDelegate {
     self.activeCertificateID = nil
   }
 
-  private func requestClientCertificate() {
+  func requestClientCertificate() {
     guard let session, session.activationState == .activated else { return }
     session.transferUserInfo(["command": "requestClientCertificate"])
     AppLogger.watchConnectivity.info("Requested client certificate from iPhone")

@@ -18,7 +18,13 @@ struct ClientCertificateView: View {
         HStack {
           Text("Status")
           Spacer()
-          Text(model.reference?.displayName ?? "Not configured")
+          Text(model.isMissing ? "Certificate missing" : (model.reference?.displayName ?? "Not configured"))
+            .foregroundColor(model.isMissing ? .red : .secondary)
+        }
+
+        if model.isMissing {
+          Text("The stored certificate is missing. Import the certificate again.")
+            .font(.caption)
             .foregroundColor(.secondary)
         }
 
@@ -140,6 +146,9 @@ struct ClientCertificateView: View {
         }
       }
     }
+    .onAppear {
+      model.refreshStoredCertificateState()
+    }
     .onChange(of: model.errorMessage) { _, errorMessage in
       guard let errorMessage else { return }
       Toast(error: errorMessage).show()
@@ -166,11 +175,20 @@ extension ClientCertificateView {
     var reference: ClientCertificateReference?
     var isImporting = false
     var isAwaitingPassword = false
+    var isMissing = false
     var errorMessage: String?
     var onCertificateChanged: ((ClientCertificateReference?) -> Void)?
 
     init(reference: ClientCertificateReference? = nil) {
       self.reference = reference
+    }
+
+    func refreshStoredCertificateState() {
+      guard let reference else {
+        isMissing = false
+        return
+      }
+      isMissing = ClientCertificateStore.shared.load(id: reference.id) == nil
     }
 
     func importFile(at url: URL) {}

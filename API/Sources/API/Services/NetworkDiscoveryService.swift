@@ -10,7 +10,11 @@ public final class NetworkDiscoveryService: @unchecked Sendable {
     headers: [String: String],
     clientCertificate: ClientCertificateReference? = nil
   ) async throws -> ServerStatus {
-    let client = NetworkService(baseURL: serverURL, clientCertificate: clientCertificate)
+    let client = NetworkService(
+      baseURL: serverURL,
+      clientCertificate: clientCertificate,
+      allowedHosts: Self.allowedHosts(for: serverURL)
+    )
 
     let request = NetworkRequest<ServerStatus>(
       path: "/status",
@@ -62,6 +66,10 @@ public final class NetworkDiscoveryService: @unchecked Sendable {
     return (start...end).map { "\(base).\($0)" }
   }
 
+  private static func allowedHosts(for url: URL) -> Set<String> {
+    ClientCertificateEndpoint(url: url).map { Set([$0.key]) } ?? []
+  }
+
   private func testServer(ip: String, port: Int) async -> DiscoveredServer? {
     let startTime = Date()
 
@@ -69,7 +77,10 @@ public final class NetworkDiscoveryService: @unchecked Sendable {
       return nil
     }
 
-    let testClient = NetworkService(baseURL: serverURL)
+    let testClient = NetworkService(
+      baseURL: serverURL,
+      allowedHosts: Self.allowedHosts(for: serverURL)
+    )
 
     struct StatusResponse: Codable {
       let app: String?

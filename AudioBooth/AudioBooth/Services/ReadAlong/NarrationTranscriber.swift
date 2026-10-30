@@ -58,7 +58,7 @@ nonisolated final class NarrationTranscriber: Sendable {
   func verifyAudioIsReadable() async throws {
     guard let track = source.tracks.first else { throw Failure.noAudioTrack }
 
-    let asset = AVURLAsset(url: track.url)
+    let asset = await ClientCertificateAssetResolver.asset(for: track.url)
 
     do {
       guard try await asset.loadTracks(withMediaType: .audio).first != nil else {
@@ -237,7 +237,7 @@ nonisolated private extension NarrationTranscriber {
     analyzer: SpeechAnalyzer,
     inputTimeline: InputTimeline
   ) async throws {
-    let asset = AVURLAsset(url: track.url)
+    let asset = await ClientCertificateAssetResolver.asset(for: track.url)
 
     let reader = try await makeReader(for: asset, track: track, from: offset, format: analyzerFormat)
     defer { reader.reader.cancelReading() }

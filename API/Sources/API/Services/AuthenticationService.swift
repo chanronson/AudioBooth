@@ -88,7 +88,11 @@ public final class AuthenticationService: ObservableObject {
       throw Audiobookshelf.AudiobookshelfError.invalidURL
     }
 
-    let loginService = NetworkService(baseURL: baseURL, clientCertificate: clientCertificate)
+    let loginService = NetworkService(
+      baseURL: baseURL,
+      clientCertificate: clientCertificate,
+      allowedHosts: Self.allowedHosts(for: baseURL)
+    )
 
     struct LoginRequest: Codable {
       let username: String
@@ -142,7 +146,11 @@ public final class AuthenticationService: ObservableObject {
       throw Audiobookshelf.AudiobookshelfError.invalidURL
     }
 
-    let loginService = NetworkService(baseURL: baseURL, clientCertificate: clientCertificate)
+    let loginService = NetworkService(
+      baseURL: baseURL,
+      clientCertificate: clientCertificate,
+      allowedHosts: Self.allowedHosts(for: baseURL)
+    )
 
     var query: [String: String] = [
       "code": code,
@@ -231,7 +239,12 @@ public final class AuthenticationService: ObservableObject {
 
     let request = NetworkRequest<Authorize>(path: "/api/authorize", method: .post, body: nil)
 
-    let altService = NetworkService(baseURL: url, server: server) {
+    var allowedHosts = server.certificateAllowedHosts
+    if let endpoint = ClientCertificateEndpoint(url: url) {
+      allowedHosts.insert(endpoint.key)
+    }
+
+    let altService = NetworkService(baseURL: url, server: server, allowedHosts: allowedHosts) {
       let freshToken = try? await server.freshToken
       guard let credentials = freshToken else { return [:] }
       var headers = await server.customHeaders
@@ -305,6 +318,10 @@ public final class AuthenticationService: ObservableObject {
         allowedHosts: server.certificateAllowedHosts
       )
     }
+  }
+
+  private static func allowedHosts(for url: URL) -> Set<String> {
+    ClientCertificateEndpoint(url: url).map { Set([$0.key]) } ?? []
   }
 
   func refreshRedactedHosts() {
@@ -551,7 +568,11 @@ public final class AuthenticationService: ObservableObject {
     var headers = customHeaders
     headers["Authorization"] = token.bearer
 
-    let validateService = NetworkService(baseURL: baseURL, clientCertificate: clientCertificate)
+    let validateService = NetworkService(
+      baseURL: baseURL,
+      clientCertificate: clientCertificate,
+      allowedHosts: Self.allowedHosts(for: baseURL)
+    )
     let request = NetworkRequest<Authorize>(
       path: "/api/authorize",
       method: .post,

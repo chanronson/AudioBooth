@@ -1,3 +1,4 @@
+import Security
 import XCTest
 @testable import API
 
@@ -74,6 +75,24 @@ final class ClientCertificateImporterTests: XCTestCase {
       )
     ) { error in
       XCTAssertEqual(error as? ClientCertificateImportError, .tooLarge)
+    }
+  }
+
+  func testRejectsMultipleIdentities() throws {
+    var items: CFArray?
+    let status = SecPKCS12Import(
+      try fixture("client") as CFData,
+      [kSecImportExportPassphrase as String: "test"] as CFDictionary,
+      &items
+    )
+    XCTAssertEqual(status, errSecSuccess)
+
+    let entries = try XCTUnwrap(items as? [[String: Any]])
+
+    XCTAssertThrowsError(
+      try ClientCertificateImporter.selectIdentity(from: entries + entries)
+    ) { error in
+      XCTAssertEqual(error as? ClientCertificateImportError, .multipleIdentities)
     }
   }
 

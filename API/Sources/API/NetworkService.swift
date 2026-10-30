@@ -96,6 +96,7 @@ struct NetworkResponse<T: Decodable> {
 final class NetworkService: @unchecked Sendable {
   private let baseURL: URL?
   private let clientCertificate: ClientCertificateReference?
+  private let allowedHosts: Set<String>?
   private let headersProvider: @Sendable () async -> [String: String]
   private weak var server: Server?
 
@@ -113,11 +114,13 @@ final class NetworkService: @unchecked Sendable {
     baseURL: URL? = nil,
     server: Server? = nil,
     clientCertificate: ClientCertificateReference? = nil,
+    allowedHosts: Set<String>? = nil,
     headersProvider: @escaping @Sendable () async -> [String: String] = { [:] }
   ) {
     self.baseURL = baseURL
     self.server = server
     self.clientCertificate = clientCertificate
+    self.allowedHosts = allowedHosts
     self.headersProvider = headersProvider
   }
 
@@ -173,11 +176,14 @@ final class NetworkService: @unchecked Sendable {
     )
 
     let server = self.server
-    var allowedHosts = await server?.certificateAllowedHosts ?? []
-    if let endpoint = urlRequest.url.flatMap(ClientCertificateEndpoint.init(url:)) {
-      allowedHosts.insert(endpoint.key)
+    let serverAllowedHosts = await server?.certificateAllowedHosts ?? []
+    let allowedHosts = serverAllowedHosts.union(self.allowedHosts ?? [])
+    let certificate: ClientCertificateReference?
+    if let server {
+      certificate = await server.clientCertificate
+    } else {
+      certificate = clientCertificate
     }
-    let certificate = await server?.clientCertificate ?? clientCertificate
     let selectedSession = ClientCertificateSessionProvider.shared.session(
       for: certificate,
       allowedHosts: allowedHosts,

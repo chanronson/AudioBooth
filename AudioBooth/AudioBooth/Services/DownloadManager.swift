@@ -1076,14 +1076,15 @@ private final class DownloadSessionDelegate: NSObject, URLSessionDownloadDelegat
   nonisolated func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
     guard let error, let relativePath = task.taskDescription else { return }
 
-    AppLogger.download.error("Download attempt failed: \(error.localizedDescription)")
+    let mappedError = NetworkError.map(error)
+    AppLogger.download.error("Download attempt failed: \(mappedError.localizedDescription)")
     let resumeData = (error as NSError).userInfo[NSURLSessionDownloadTaskResumeData] as? Data
 
     Task { @MainActor in
       DownloadManager.shared.fileFailed(
         relativePath: relativePath,
         task: task,
-        error: error,
+        error: mappedError,
         resumeData: resumeData
       )
     }

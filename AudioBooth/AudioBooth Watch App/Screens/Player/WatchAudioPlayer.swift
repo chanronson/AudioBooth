@@ -1,3 +1,4 @@
+import API
 import AVFoundation
 import Combine
 import OSLog
@@ -326,7 +327,17 @@ private extension AVPlayer {
 
 extension AVPlayerItem {
   convenience init(url: URL, headers: [String: String]?) {
-    if !url.isFileURL, let headers, !headers.isEmpty {
+    let server = Audiobookshelf.shared.authentication.server
+    if !url.isFileURL, let reference = server?.clientCertificate {
+      self.init(
+        asset: ClientCertificateAsset(
+          url: url,
+          headers: headers ?? [:],
+          reference: reference,
+          allowedHosts: server?.certificateAllowedHosts ?? []
+        )
+      )
+    } else if !url.isFileURL, let headers, !headers.isEmpty {
       let asset = AVURLAsset(url: url, options: ["AVURLAssetHTTPHeaderFieldsKey": headers])
       self.init(asset: asset)
     } else {

@@ -76,10 +76,26 @@ public final class ClientCertificateSessionProvider: @unchecked Sendable {
   public func invalidate(certificateID: String) {
     let prefix = "\(certificateID)|"
     let downloadPrefix = "download|\(certificateID)|"
+
     lock.lock()
-    defer { lock.unlock() }
+    let invalidated = sessions.filter {
+      $0.key.hasPrefix(prefix) || $0.key.hasPrefix(downloadPrefix)
+    }
     sessions = sessions.filter {
       !$0.key.hasPrefix(prefix) && !$0.key.hasPrefix(downloadPrefix)
+    }
+    lock.unlock()
+
+    for session in invalidated.values {
+      Self.invalidate(session)
+    }
+  }
+
+  private static func invalidate(_ session: any URLSessionProtocol) {
+    if let proxy = session as? URLSessionProxy {
+      proxy.session.invalidateAndCancel()
+    } else if let urlSession = session as? URLSession {
+      urlSession.invalidateAndCancel()
     }
   }
 

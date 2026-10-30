@@ -43,6 +43,7 @@ final class ClientCertificateViewModel: ClientCertificateView.Model {
       self.pendingImport = nil
       self.reference = reference
       isAwaitingPassword = false
+      isMissing = false
       errorMessage = nil
       onCertificateChanged?(reference)
     } catch {
@@ -53,6 +54,7 @@ final class ClientCertificateViewModel: ClientCertificateView.Model {
   override func removeCertificate() {
     coordinator.remove(reference)
     reference = nil
+    isMissing = false
     errorMessage = nil
     onCertificateChanged?(nil)
   }

@@ -16,16 +16,18 @@ AudioBooth imports PKCS#12 files with the `.p12` or `.pfx` extension. The file m
 Use OpenSSL to create the file from a certificate and a private key:
 
 ```sh
-openssl pkcs12 -export \
+openssl pkcs12 -export -legacy \
   -out client.p12 \
   -inkey client.key \
   -in client.crt
 ```
 
+OpenSSL 3 needs the `-legacy` flag. Apple's `SecPKCS12Import` cannot read the default OpenSSL 3 encryption without it.
+
 If your certificate needs an intermediate chain, add the chain file:
 
 ```sh
-openssl pkcs12 -export \
+openssl pkcs12 -export -legacy \
   -out client.p12 \
   -inkey client.key \
   -in client.crt \
@@ -60,7 +62,7 @@ AudioBooth checks the file before it stores the certificate. If the import fails
 
 ## Replace a Certificate
 
-1. Open **Server > Client Certificate**.
+1. Open **Server > Advanced > Client Certificate**.
 2. Tap **Replace Certificate**.
 3. Select the new file and enter its password.
 
@@ -68,7 +70,7 @@ AudioBooth saves the new certificate and then deletes the previous certificate.
 
 ## Remove a Certificate
 
-1. Open **Server > Client Certificate**.
+1. Open **Server > Advanced > Client Certificate**.
 2. Tap **Remove Certificate**.
 3. Confirm the removal.
 
@@ -112,7 +114,7 @@ AudioBooth stores the PKCS#12 data and the password only in the Keychain. The Ke
 
 AudioBooth does not store certificate secrets in connection data, preferences, logs, analytics, or crash reports.
 
-Shared connection links contain the server URL, custom headers, an optional token, and an alias. Shared connection links do not contain the client certificate, its password, or its private key. Import the certificate separately on the other device.
+Shared connection links contain the server URL, custom headers, an optional token, and an alias. Shared connection links do not contain the client certificate, its password, or its private key. After you import a shared connection on the other device, open **Server > Advanced > Client Certificate** and import the certificate separately.
 
 ## Troubleshooting
 
@@ -135,8 +137,7 @@ Error: **The server rejected the client certificate. Open Server > Client Certif
 Check these items:
 
 - The certificate is current and not expired.
-- The certificate belongs to the server trust chain.
-- The reverse proxy accepts the certificate issuer.
+- The server trusts the certificate issuer or CA chain.
 - The fingerprint in AudioBooth matches the certificate on the server.
 
 Replace the certificate if the server configuration changed.
