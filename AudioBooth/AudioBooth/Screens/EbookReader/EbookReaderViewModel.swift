@@ -3,6 +3,7 @@ import Combine
 import Foundation
 import Logging
 import Models
+import Pulse
 import ReadiumNavigator
 import ReadiumShared
 import SwiftUI
