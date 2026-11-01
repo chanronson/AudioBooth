@@ -19,8 +19,6 @@ jobs:
     name: Build iOS and watchOS
     runs-on: macos-26
     timeout-minutes: 30
-    env:
-      DERIVED_DATA: ${{ runner.temp }}/DerivedData
     steps:
       - name: Check out
         uses: actions/checkout@v4
@@ -38,7 +36,7 @@ jobs:
             -scheme AudioBooth \
             -configuration Debug \
             -destination 'generic/platform=iOS Simulator' \
-            -derivedDataPath "$DERIVED_DATA" \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO
 
@@ -50,6 +48,6 @@ jobs:
             -scheme "AudioBooth Watch App" \
             -configuration Debug \
             -destination 'generic/platform=watchOS Simulator' \
-            -derivedDataPath "$DERIVED_DATA" \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO
