@@ -1,6 +1,7 @@
 import API
 import Foundation
 import Logging
+import Pulse
 
 final class NarrationProbe {
   static let shared = NarrationProbe()
