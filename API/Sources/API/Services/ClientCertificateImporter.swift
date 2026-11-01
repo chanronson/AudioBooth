@@ -89,8 +89,11 @@ public enum ClientCertificateImporter {
   }
 
   static func selectIdentity(from entries: [[String: Any]]) throws -> SecIdentity {
-    let identities = entries.compactMap {
-      $0[kSecImportItemIdentity as String] as? SecIdentity
+    let identities: [SecIdentity] = entries.compactMap { entry in
+      guard let identityValue = entry[kSecImportItemIdentity as String] else {
+        return nil
+      }
+      return identityValue as! SecIdentity
     }
 
     guard !identities.isEmpty else {

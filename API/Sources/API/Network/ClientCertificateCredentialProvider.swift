@@ -18,10 +18,12 @@ public enum ClientCertificateCredentialProvider {
       ) == errSecSuccess,
       let entries = items as? [[String: Any]],
       let entry = entries.first,
-      let identity = entry[kSecImportItemIdentity as String] as? SecIdentity
+      let identityValue = entry[kSecImportItemIdentity as String]
     else {
       return nil
     }
+
+    let identity = identityValue as! SecIdentity
 
     var certificate: SecCertificate?
     guard
