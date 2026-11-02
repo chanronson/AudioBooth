@@ -81,7 +81,7 @@ jobs:
         run: |
           set -o pipefail
           xcodebuild -list
-          SCHEME="$(xcodebuild -list 2>/dev/null | awk '/Schemes:/{flag=1;next}/^$/{flag=0}flag' | grep -oE '[A-Za-z0-9-]+-Package' | head -1)"
+          SCHEME="$(xcodebuild -list 2>/dev/null | awk '/Schemes:/{flag=1;next}/^$/{flag=0}flag' | grep -oE '[A-Za-z0-9-]+-Package' | head -1 || true)"
           if [ -z "$SCHEME" ]; then
             SCHEME="API"
           fi
