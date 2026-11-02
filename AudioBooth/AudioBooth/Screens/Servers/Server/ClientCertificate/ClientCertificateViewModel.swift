@@ -43,7 +43,10 @@ final class ClientCertificateViewModel: ClientCertificateView.Model {
       do {
         let reference = try coordinator.commit(pending, password: password)
         await MainActor.run {
-          guard let self else { return }
+          guard let self else {
+            coordinator.remove(reference)
+            return
+          }
           self.pendingImport = nil
           self.reference = reference
           self.isAwaitingPassword = false
