@@ -190,7 +190,7 @@ final class ServerViewModel: ServerView.Model {
     }
   }
 
-  deinit {
+  isolated deinit {
     if let pendingClientCertificate {
       ClientCertificateStore.shared.delete(id: pendingClientCertificate.id)
     }
