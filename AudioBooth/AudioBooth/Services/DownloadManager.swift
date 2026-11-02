@@ -1022,7 +1022,7 @@ final class DownloadManager: NSObject, ObservableObject {
   }
 }
 
-final class CertificateChallengeTracker: @unchecked Sendable {
+nonisolated final class CertificateChallengeTracker: @unchecked Sendable {
   private let lock = NSLock()
   private var identifiers: Set<Int> = []
 

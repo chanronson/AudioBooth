@@ -3,7 +3,7 @@ import Combine
 import Foundation
 import OSLog
 
-final class CertificateChallengeTracker: @unchecked Sendable {
+nonisolated final class CertificateChallengeTracker: @unchecked Sendable {
   private let lock = NSLock()
   private var identifiers: Set<Int> = []
 
@@ -381,7 +381,7 @@ final class DownloadManager: NSObject, ObservableObject {
     connectivityManager.requestClientCertificate()
   }
 
-  private static func isCertificateError(_ error: Error) -> Bool {
+  nonisolated private static func isCertificateError(_ error: Error) -> Bool {
     guard let networkError = error as? NetworkError else { return false }
     switch networkError {
     case .clientCertificateRequired, .clientCertificateRejected:
