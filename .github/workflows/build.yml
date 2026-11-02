@@ -80,8 +80,14 @@ jobs:
         working-directory: API
         run: |
           set -o pipefail
+          xcodebuild -list
+          SCHEME="$(xcodebuild -list 2>/dev/null | awk '/Schemes:/{flag=1;next}/^$/{flag=0}flag' | grep -oE '[A-Za-z0-9-]+-Package' | head -1)"
+          if [ -z "$SCHEME" ]; then
+            SCHEME="API"
+          fi
+          echo "Using scheme: $SCHEME"
           xcodebuild test \
-            -scheme "API-Package" \
+            -scheme "$SCHEME" \
             -destination "id=${{ steps.resolve-device.outputs.device-id }}" \
             -derivedDataPath "$RUNNER_TEMP/DerivedDataTests" \
             CODE_SIGNING_ALLOWED=NO \
