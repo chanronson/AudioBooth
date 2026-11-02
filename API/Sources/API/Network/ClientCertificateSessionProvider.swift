@@ -7,6 +7,9 @@ public final class ClientCertificateSessionProvider: @unchecked Sendable {
   private let lock = NSLock()
   private var sessions: [String: any URLSessionProtocol] = [:]
 
+  private static let maxSessions = 8
+  private var accessOrder: [String] = []
+
   public init() {}
 
   public func session(
@@ -25,9 +28,9 @@ public final class ClientCertificateSessionProvider: @unchecked Sendable {
     )
 
     lock.lock()
-    defer { lock.unlock() }
-
+    touch(key)
     if let cached = sessions[key] {
+      lock.unlock()
       return cached
     }
 
@@ -40,6 +43,10 @@ public final class ClientCertificateSessionProvider: @unchecked Sendable {
       delegate: handler
     )
     sessions[key] = session
+    touch(key)
+    let evicted = evictIfNeeded()
+    lock.unlock()
+    for evictedSession in evicted.values { Self.invalidate(evictedSession) }
     return session
   }
 
@@ -55,9 +62,9 @@ public final class ClientCertificateSessionProvider: @unchecked Sendable {
     let key = "download|\(reference.id)|\(hosts)"
 
     lock.lock()
-    defer { lock.unlock() }
-
+    touch(key)
     if let cached = sessions[key] {
+      lock.unlock()
       return cached
     }
 
@@ -70,6 +77,10 @@ public final class ClientCertificateSessionProvider: @unchecked Sendable {
       delegate: handler
     )
     sessions[key] = session
+    touch(key)
+    let evicted = evictIfNeeded()
+    lock.unlock()
+    for evictedSession in evicted.values { Self.invalidate(evictedSession) }
     return session
   }
 
@@ -84,11 +95,35 @@ public final class ClientCertificateSessionProvider: @unchecked Sendable {
     sessions = sessions.filter {
       !$0.key.hasPrefix(prefix) && !$0.key.hasPrefix(downloadPrefix)
     }
+    accessOrder.removeAll { $0.hasPrefix(prefix) || $0.hasPrefix(downloadPrefix) }
     lock.unlock()
 
     for session in invalidated.values {
       Self.invalidate(session)
     }
+  }
+
+  var cachedSessionCount: Int {
+    lock.lock()
+    defer { lock.unlock() }
+    return sessions.count
+  }
+
+  private func touch(_ key: String) {
+    accessOrder.removeAll { $0 == key }
+    accessOrder.append(key)
+  }
+
+  private func evictIfNeeded() -> [String: any URLSessionProtocol] {
+    guard sessions.count > Self.maxSessions else { return [:] }
+    var invalidated: [String: any URLSessionProtocol] = [:]
+    while accessOrder.count > Self.maxSessions {
+      let key = accessOrder.removeFirst()
+      if let session = sessions.removeValue(forKey: key) {
+        invalidated[key] = session
+      }
+    }
+    return invalidated
   }
 
   private static func invalidate(_ session: any URLSessionProtocol) {
