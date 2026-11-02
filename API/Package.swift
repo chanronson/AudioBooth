@@ -4,7 +4,7 @@ import PackageDescription
 
 let package = Package(
   name: "API",
-  platforms: [.iOS(.v17), .watchOS(.v10)],
+  platforms: [.iOS(.v17), .watchOS(.v10), .macOS(.v13)],
   products: [
     .library(
       name: "API",
