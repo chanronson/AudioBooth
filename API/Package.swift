@@ -4,7 +4,7 @@ import PackageDescription
 
 let package = Package(
   name: "API",
-  platforms: [.iOS(.v17), .watchOS(.v10)],
+  platforms: [.iOS(.v17), .watchOS(.v10), .macOS(.v13)],
   products: [
     .library(
       name: "API",
@@ -26,6 +26,11 @@ let package = Package(
         .product(name: "NukeUI", package: "Nuke"),
         .product(name: "Pulse", package: "Pulse"),
       ],
-    )
+    ),
+    .testTarget(
+      name: "APITests",
+      dependencies: ["API"],
+      resources: [.copy("Fixtures")]
+    ),
   ]
 )

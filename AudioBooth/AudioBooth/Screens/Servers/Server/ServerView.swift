@@ -68,6 +68,10 @@ struct ServerView: View {
           }
         customHeadersSection
 
+        if model.authenticationModel != nil {
+          clientCertificateSection
+        }
+
         if let serverVersion = model.serverVersion {
           HStack {
             Text("Server Version")
@@ -156,6 +160,23 @@ struct ServerView: View {
           if model.customHeaders.headers.count > 0 {
             Text("\(model.customHeaders.headers.count)")
               .foregroundColor(.secondary)
+          }
+        }
+      }
+    )
+  }
+
+  @ViewBuilder
+  var clientCertificateSection: some View {
+    NavigationLink(
+      destination: { ClientCertificateView(model: model.clientCertificate) },
+      label: {
+        HStack {
+          Image(systemName: "checkmark.seal")
+          Text("Client Certificate")
+          Spacer()
+          if let name = model.clientCertificate.reference?.displayName {
+            Text(name).foregroundColor(.secondary)
           }
         }
       }
@@ -265,6 +286,8 @@ struct ServerView: View {
           }
         }
       }
+
+      clientCertificateSection
     }
     .listRowBackground(theme.colors.background.card)
   }
@@ -303,6 +326,7 @@ extension ServerView {
     var useSubdirectory: Bool
     var subdirectory: String
     var customHeaders: CustomHeadersView.Model
+    var clientCertificate: ClientCertificateView.Model
     var discoveryPort: String
     var discoveredServers: [DiscoveredServer]
     var libraries: [Library]
@@ -354,13 +378,15 @@ extension ServerView {
       username: String? = nil,
       serverVersion: String? = nil,
       canExportConnection: Bool = true,
-      connectionSharingModel: ConnectionSharingPage.Model? = nil
+      connectionSharingModel: ConnectionSharingPage.Model? = nil,
+      clientCertificate: ClientCertificateView.Model = .init()
     ) {
       self.serverURL = serverURL
       self.serverScheme = serverScheme
       self.useSubdirectory = useSubdirectory
       self.subdirectory = subdirectory
       self.customHeaders = customHeaders
+      self.clientCertificate = clientCertificate
       self.discoveryPort = discoveryPort
       self.isDiscovering = isDiscovering
       self.isLoadingLibraries = isLoadingLibraries

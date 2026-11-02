@@ -1,0 +1,94 @@
+name: Build
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build iOS and watchOS
+    runs-on: xcode-27
+    timeout-minutes: 30
+    steps:
+      - name: Check out
+        uses: actions/checkout@v5
+
+      - name: Show Xcode version
+        run: |
+          xcodebuild -version
+          xcodebuild -showsdks
+
+      - name: Build iOS app
+        run: |
+          set -o pipefail
+          xcodebuild build \
+            -project AudioBooth/AudioBooth.xcodeproj \
+            -scheme AudioBooth \
+            -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO
+
+      - name: Build watchOS app
+        run: |
+          set -o pipefail
+          xcodebuild build \
+            -project AudioBooth/AudioBooth.xcodeproj \
+            -scheme "AudioBooth Watch App" \
+            -configuration Debug \
+            -destination 'generic/platform=watchOS Simulator' \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO
+
+  api-tests:
+    name: Run API package tests
+    runs-on: xcode-27
+    timeout-minutes: 30
+    steps:
+      - name: Check out
+        uses: actions/checkout@v5
+
+      - name: Show Xcode version
+        run: |
+          xcodebuild -version
+          xcodebuild -showsdks
+
+      - name: Resolve device sim info
+        id: resolve-device
+        run: |
+          DEVICE_ID="$(xcrun simctl list devices available | grep -m1 "iPhone" | grep -oE '[0-9A-Fa-f]{8}-([0-9A-Fa-f]{4}-){3}[0-9A-Fa-f]{12}' || true)"
+          if [ -z "$DEVICE_ID" ]; then
+            echo "No available iPhone simulator"
+            xcrun simctl list devices available
+            exit 1
+          fi
+          echo "device-id=$DEVICE_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Run API package tests
+        working-directory: API
+        run: |
+          set -o pipefail
+          xcodebuild -list
+          SCHEME="$(xcodebuild -list 2>/dev/null | awk '/Schemes:/{flag=1;next}/^$/{flag=0}flag' | grep -oE '[A-Za-z0-9-]+-Package' | head -1 || true)"
+          if [ -z "$SCHEME" ]; then
+            SCHEME="API"
+          fi
+          echo "Using scheme: $SCHEME"
+          xcodebuild test \
+            -scheme "$SCHEME" \
+            -destination "id=${{ steps.resolve-device.outputs.device-id }}" \
+            -derivedDataPath "$RUNNER_TEMP/DerivedDataTests" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO

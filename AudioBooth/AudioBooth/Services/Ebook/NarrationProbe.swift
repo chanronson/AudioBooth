@@ -1,6 +1,7 @@
 import API
 import Foundation
 import Logging
+import Pulse
 
 final class NarrationProbe {
   static let shared = NarrationProbe()
@@ -123,7 +124,8 @@ private nonisolated struct RemoteEPUBDirectory {
     var request = request
     request.setValue(range, forHTTPHeaderField: "Range")
 
-    let (bytes, response) = try await URLSession.shared.bytes(for: request)
+    let session = await ServerSession.current()
+    let (bytes, response) = try await session.bytes(for: request, delegate: nil)
 
     guard let response = response as? HTTPURLResponse,
       response.statusCode == 206,

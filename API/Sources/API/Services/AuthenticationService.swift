@@ -30,8 +30,19 @@ public final class AuthenticationService: ObservableObject {
     didSet {
       if let server {
         UserDefaults.standard.set(server.id, forKey: Keys.activeServerID)
+        ClientCertificateRegistry.shared.update(
+          endpoints: server.certificateAllowedHosts,
+          reference: server.clientCertificate
+        )
+        ImagePipeline.shared = .audioBooth(
+          customHeaders: server.customHeaders,
+          clientCertificate: server.clientCertificate,
+          allowedHosts: server.certificateAllowedHosts
+        )
       } else {
         UserDefaults.standard.removeObject(forKey: Keys.activeServerID)
+        ClientCertificateRegistry.shared.update(endpoints: [], reference: nil)
+        ImagePipeline.shared = .audioBooth(customHeaders: nil)
       }
       refreshRedactedHosts()
       audiobookshelf.setupNetworkService()
@@ -55,6 +66,13 @@ public final class AuthenticationService: ObservableObject {
       }
     }
 
+    if let server {
+      ClientCertificateRegistry.shared.update(
+        endpoints: server.certificateAllowedHosts,
+        reference: server.clientCertificate
+      )
+    }
+
     refreshRedactedHosts()
   }
 
@@ -63,13 +81,18 @@ public final class AuthenticationService: ObservableObject {
     username: String,
     password: String,
     customHeaders: [String: String] = [:],
+    clientCertificate: ClientCertificateReference? = nil,
     existingServerID: String? = nil
   ) async throws -> String {
     guard let baseURL = URL(string: serverURL) else {
       throw Audiobookshelf.AudiobookshelfError.invalidURL
     }
 
-    let loginService = NetworkService(baseURL: baseURL)
+    let loginService = NetworkService(
+      baseURL: baseURL,
+      clientCertificate: clientCertificate,
+      allowedHosts: Self.allowedHosts(for: baseURL)
+    )
 
     struct LoginRequest: Codable {
       let username: String
@@ -96,6 +119,7 @@ public final class AuthenticationService: ObservableObject {
       serverURL: baseURL,
       token: authToken,
       customHeaders: customHeaders,
+      clientCertificate: clientCertificate,
       existingServerID: existingServerID
     )
     servers[connectionID]?.update(with: response.value)
@@ -109,6 +133,7 @@ public final class AuthenticationService: ObservableObject {
     state: String?,
     cookies: [HTTPCookie],
     customHeaders: [String: String] = [:],
+    clientCertificate: ClientCertificateReference? = nil,
     existingServerID: String? = nil
   ) async throws -> String {
     AppLogger.authentication.info("loginWithOIDC called for server: \(serverURL)")
@@ -121,7 +146,11 @@ public final class AuthenticationService: ObservableObject {
       throw Audiobookshelf.AudiobookshelfError.invalidURL
     }
 
-    let loginService = NetworkService(baseURL: baseURL)
+    let loginService = NetworkService(
+      baseURL: baseURL,
+      clientCertificate: clientCertificate,
+      allowedHosts: Self.allowedHosts(for: baseURL)
+    )
 
     var query: [String: String] = [
       "code": code,
@@ -161,6 +190,7 @@ public final class AuthenticationService: ObservableObject {
         serverURL: baseURL,
         token: authToken,
         customHeaders: customHeaders,
+        clientCertificate: clientCertificate,
         existingServerID: existingServerID
       )
       servers[connectionID]?.update(with: response.value)
@@ -183,7 +213,15 @@ public final class AuthenticationService: ObservableObject {
       throw Audiobookshelf.AudiobookshelfError.networkError("Server not found")
     }
     server = newServer
-    ImagePipeline.shared = .audioBooth(customHeaders: newServer.customHeaders)
+    ClientCertificateRegistry.shared.update(
+      endpoints: newServer.certificateAllowedHosts,
+      reference: newServer.clientCertificate
+    )
+    ImagePipeline.shared = .audioBooth(
+      customHeaders: newServer.customHeaders,
+      clientCertificate: newServer.clientCertificate,
+      allowedHosts: newServer.certificateAllowedHosts
+    )
   }
 
   public func restoreConnection(_ connection: Connection) {
@@ -201,7 +239,12 @@ public final class AuthenticationService: ObservableObject {
 
     let request = NetworkRequest<Authorize>(path: "/api/authorize", method: .post, body: nil)
 
-    let altService = NetworkService(baseURL: url, server: server) {
+    var allowedHosts = server.certificateAllowedHosts
+    if let endpoint = ClientCertificateEndpoint(url: url) {
+      allowedHosts.insert(endpoint.key)
+    }
+
+    let altService = NetworkService(baseURL: url, server: server, allowedHosts: allowedHosts) {
       let freshToken = try? await server.freshToken
       guard let credentials = freshToken else { return [:] }
       var headers = await server.customHeaders
@@ -217,12 +260,68 @@ public final class AuthenticationService: ObservableObject {
     server.alternativeURL = url
     connections[serverID] = Connection(server)
     refreshRedactedHosts()
+
+    if server.id == self.server?.id {
+      ClientCertificateRegistry.shared.update(
+        endpoints: server.certificateAllowedHosts,
+        reference: server.clientCertificate
+      )
+      ImagePipeline.shared = .audioBooth(
+        customHeaders: server.customHeaders,
+        clientCertificate: server.clientCertificate,
+        allowedHosts: server.certificateAllowedHosts
+      )
+    }
   }
 
   public func setUsingAlternativeURL(_ serverID: String, isUsing: Bool) {
     guard let server = servers[serverID] else { return }
     server.urlMode = isUsing ? .alternative : .primary
     connections[serverID] = Connection(server)
+
+    if server.id == self.server?.id {
+      ClientCertificateRegistry.shared.update(
+        endpoints: server.certificateAllowedHosts,
+        reference: server.clientCertificate
+      )
+      ImagePipeline.shared = .audioBooth(
+        customHeaders: server.customHeaders,
+        clientCertificate: server.clientCertificate,
+        allowedHosts: server.certificateAllowedHosts
+      )
+    }
+  }
+
+  public func updateClientCertificate(
+    _ serverID: String,
+    reference: ClientCertificateReference?
+  ) {
+    guard let server = servers[serverID] else { return }
+
+    let previousID = server.clientCertificate?.id
+    server.clientCertificate = reference
+    connections[serverID] = Connection(server)
+
+    if let previousID, previousID != reference?.id {
+      ClientCertificateStore.shared.delete(id: previousID)
+      ClientCertificateSessionProvider.shared.invalidate(certificateID: previousID)
+    }
+
+    if server.id == self.server?.id {
+      ClientCertificateRegistry.shared.update(
+        endpoints: server.certificateAllowedHosts,
+        reference: reference
+      )
+      ImagePipeline.shared = .audioBooth(
+        customHeaders: server.customHeaders,
+        clientCertificate: reference,
+        allowedHosts: server.certificateAllowedHosts
+      )
+    }
+  }
+
+  private static func allowedHosts(for url: URL) -> Set<String> {
+    ClientCertificateEndpoint(url: url).map { Set([$0.key]) } ?? []
   }
 
   func refreshRedactedHosts() {
@@ -245,7 +344,13 @@ public final class AuthenticationService: ObservableObject {
 
     server.customHeaders = customHeaders
 
-    ImagePipeline.shared = .audioBooth(customHeaders: customHeaders)
+    if server.id == self.server?.id {
+      ImagePipeline.shared = .audioBooth(
+        customHeaders: customHeaders,
+        clientCertificate: server.clientCertificate,
+        allowedHosts: server.certificateAllowedHosts
+      )
+    }
 
     var allConnections = connections
     allConnections[serverID] = Connection(server)
@@ -261,6 +366,11 @@ public final class AuthenticationService: ObservableObject {
   }
 
   public func removeServer(_ serverID: String) {
+    if let certificate = servers[serverID]?.clientCertificate {
+      ClientCertificateStore.shared.delete(id: certificate.id)
+      ClientCertificateSessionProvider.shared.invalidate(certificateID: certificate.id)
+    }
+
     servers[serverID]?.clearStorage()
 
     var allConnections = connections
@@ -271,6 +381,7 @@ public final class AuthenticationService: ObservableObject {
 
     if server?.id == serverID {
       server = nil
+      ClientCertificateRegistry.shared.update(endpoints: [], reference: nil)
     }
   }
 
@@ -278,6 +389,7 @@ public final class AuthenticationService: ObservableObject {
     serverURL: URL,
     token: Credentials,
     customHeaders: [String: String],
+    clientCertificate: ClientCertificateReference?,
     existingServerID: String?
   ) throws -> String {
     if let existingServerID {
@@ -285,14 +397,18 @@ public final class AuthenticationService: ObservableObject {
         throw Audiobookshelf.AudiobookshelfError.networkError("Server not found")
       }
 
+      let certificate = clientCertificate ?? existingServer.clientCertificate
+
       existingServer.token = token
+      existingServer.clientCertificate = certificate
 
       let updatedConnection = Connection(
         id: existingServerID,
         serverURL: serverURL,
         token: token,
         customHeaders: customHeaders,
-        alias: existingServer.alias
+        alias: existingServer.alias,
+        clientCertificate: certificate
       )
 
       var allConnections = connections
@@ -304,7 +420,8 @@ public final class AuthenticationService: ObservableObject {
       let newConnection = Connection(
         serverURL: serverURL,
         token: token,
-        customHeaders: customHeaders
+        customHeaders: customHeaders,
+        clientCertificate: clientCertificate
       )
       let newServer = Server(connection: newConnection)
 
@@ -440,6 +557,7 @@ public final class AuthenticationService: ObservableObject {
     serverURL: String,
     apiKey: String,
     customHeaders: [String: String] = [:],
+    clientCertificate: ClientCertificateReference? = nil,
     existingServerID: String? = nil
   ) async throws -> String {
     guard let baseURL = URL(string: serverURL) else {
@@ -450,7 +568,11 @@ public final class AuthenticationService: ObservableObject {
     var headers = customHeaders
     headers["Authorization"] = token.bearer
 
-    let validateService = NetworkService(baseURL: baseURL)
+    let validateService = NetworkService(
+      baseURL: baseURL,
+      clientCertificate: clientCertificate,
+      allowedHosts: Self.allowedHosts(for: baseURL)
+    )
     let request = NetworkRequest<Authorize>(
       path: "/api/authorize",
       method: .post,
@@ -463,6 +585,7 @@ public final class AuthenticationService: ObservableObject {
       serverURL: baseURL,
       token: token,
       customHeaders: customHeaders,
+      clientCertificate: clientCertificate,
       existingServerID: existingServerID
     )
     servers[connectionID]?.update(with: response.value)
@@ -522,7 +645,7 @@ public final class AuthenticationService: ObservableObject {
       let user: User
     }
 
-    let networkService = NetworkService(baseURL: server.activeURL)
+    let networkService = NetworkService(baseURL: server.activeURL, server: server)
 
     var headers = server.customHeaders
     headers["x-refresh-token"] = refreshToken

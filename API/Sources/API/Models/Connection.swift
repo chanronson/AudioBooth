@@ -8,6 +8,7 @@ public struct Connection: Codable, Sendable {
   public let alias: String?
   public let alternativeURL: URL?
   public let isUsingAlternativeURL: Bool
+  public let clientCertificate: ClientCertificateReference?
 
   public init(
     id: String? = nil,
@@ -16,7 +17,8 @@ public struct Connection: Codable, Sendable {
     customHeaders: [String: String] = [:],
     alias: String? = nil,
     alternativeURL: URL? = nil,
-    isUsingAlternativeURL: Bool = false
+    isUsingAlternativeURL: Bool = false,
+    clientCertificate: ClientCertificateReference? = nil
   ) {
     self.id = id ?? UUID().uuidString
     self.serverURL = serverURL
@@ -25,6 +27,7 @@ public struct Connection: Codable, Sendable {
     self.alias = alias
     self.alternativeURL = alternativeURL
     self.isUsingAlternativeURL = isUsingAlternativeURL
+    self.clientCertificate = clientCertificate
   }
 
   @MainActor
@@ -36,7 +39,8 @@ public struct Connection: Codable, Sendable {
       customHeaders: server.customHeaders,
       alias: server.alias,
       alternativeURL: server.alternativeURL,
-      isUsingAlternativeURL: server.isUsingAlternativeURL
+      isUsingAlternativeURL: server.isUsingAlternativeURL,
+      clientCertificate: server.clientCertificate
     )
   }
 
@@ -53,6 +57,7 @@ public struct Connection: Codable, Sendable {
     alias = try container.decodeIfPresent(String.self, forKey: .alias)
     alternativeURL = try container.decodeIfPresent(URL.self, forKey: .alternativeURL)
     isUsingAlternativeURL = try container.decodeIfPresent(Bool.self, forKey: .isUsingAlternativeURL) ?? false
+    clientCertificate = try container.decodeIfPresent(ClientCertificateReference.self, forKey: .clientCertificate)
   }
 }
 

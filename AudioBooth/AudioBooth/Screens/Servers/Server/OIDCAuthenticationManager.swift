@@ -9,12 +9,22 @@ final class OIDCAuthenticationManager {
   private let serverURL: String
   private let pkce: PKCE
   private let customHeaders: [String: String]
+  private let clientCertificate: ClientCertificateReference?
+  private let allowedHosts: Set<String>
   private let existingServerID: String?
 
-  init(serverURL: String, customHeaders: [String: String] = [:], existingServerID: String? = nil) {
+  init(
+    serverURL: String,
+    customHeaders: [String: String] = [:],
+    clientCertificate: ClientCertificateReference? = nil,
+    allowedHosts: Set<String> = [],
+    existingServerID: String? = nil
+  ) {
     self.serverURL = serverURL
     self.pkce = PKCE()
     self.customHeaders = customHeaders
+    self.clientCertificate = clientCertificate
+    self.allowedHosts = allowedHosts
     self.existingServerID = existingServerID
   }
 
@@ -96,6 +106,7 @@ final class OIDCAuthenticationManager {
       state: state,
       cookies: cookies,
       customHeaders: customHeaders,
+      clientCertificate: clientCertificate,
       existingServerID: existingServerID
     )
 
@@ -149,7 +160,10 @@ final class OIDCAuthenticationManager {
     let config = URLSessionConfiguration.ephemeral
     let session = URLSession(
       configuration: config,
-      delegate: NoRedirectDelegate(),
+      delegate: OIDCSessionDelegate(
+        clientCertificate: clientCertificate,
+        allowedHosts: allowedHosts
+      ),
       delegateQueue: nil
     )
 
@@ -250,7 +264,18 @@ enum OIDCError: LocalizedError {
   }
 }
 
-final class NoRedirectDelegate: NSObject, URLSessionTaskDelegate {
+final class OIDCSessionDelegate: NSObject, URLSessionTaskDelegate {
+  private let clientCertificate: ClientCertificateReference?
+  private let allowedHosts: Set<String>
+
+  init(
+    clientCertificate: ClientCertificateReference?,
+    allowedHosts: Set<String>
+  ) {
+    self.clientCertificate = clientCertificate
+    self.allowedHosts = allowedHosts
+  }
+
   func urlSession(
     _ session: URLSession,
     task: URLSessionTask,
@@ -259,5 +284,45 @@ final class NoRedirectDelegate: NSObject, URLSessionTaskDelegate {
     completionHandler: @escaping (URLRequest?) -> Void
   ) {
     completionHandler(nil)
+  }
+
+  func urlSession(
+    _ session: URLSession,
+    task: URLSessionTask,
+    didReceive challenge: URLAuthenticationChallenge,
+    completionHandler: @escaping @Sendable (
+      URLSession.AuthChallengeDisposition,
+      URLCredential?
+    ) -> Void
+  ) {
+    guard
+      challenge.protectionSpace.authenticationMethod
+        == NSURLAuthenticationMethodClientCertificate
+    else {
+      completionHandler(.performDefaultHandling, nil)
+      return
+    }
+
+    let port = challenge.protectionSpace.port > 0
+      ? challenge.protectionSpace.port
+      : 443
+
+    guard
+      let clientCertificate,
+      let endpoint = ClientCertificateEndpoint(
+        host: challenge.protectionSpace.host,
+        port: port
+      ),
+      allowedHosts.contains(endpoint.key)
+    else {
+      completionHandler(.performDefaultHandling, nil)
+      return
+    }
+
+    if let credential = ClientCertificateCredentialProvider.credential(for: clientCertificate) {
+      completionHandler(.useCredential, credential)
+    } else {
+      completionHandler(.cancelAuthenticationChallenge, nil)
+    }
   }
 }

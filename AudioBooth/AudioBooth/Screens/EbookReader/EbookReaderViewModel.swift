@@ -3,6 +3,7 @@ import Combine
 import Foundation
 import Logging
 import Models
+import Pulse
 import ReadiumNavigator
 import ReadiumShared
 import SwiftUI
@@ -789,7 +790,8 @@ extension EbookReaderViewModel {
   }
 
   private func downloadTemporaryFile(from url: URL) async throws -> URL {
-    let (tempURL, _) = try await URLSession.shared.download(from: url)
+    let session = await ServerSession.download()
+    let (tempURL, _) = try await session.download(from: url, delegate: nil)
 
     let tempDirectory = FileManager.default.temporaryDirectory
     let fileName = url.lastPathComponent

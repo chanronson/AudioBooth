@@ -8,7 +8,12 @@ struct AudioBoothWatch: App {
   @WKApplicationDelegateAdaptor private var appDelegate: AppDelegate
 
   init() {
-    ImagePipeline.shared = .watch(customHeaders: Audiobookshelf.shared.authentication.server?.customHeaders)
+    let server = Audiobookshelf.shared.authentication.server
+    ImagePipeline.shared = .watch(
+      customHeaders: server?.customHeaders,
+      clientCertificate: server?.clientCertificate,
+      allowedHosts: server?.certificateAllowedHosts ?? []
+    )
     _ = WatchConnectivityManager.shared
     DownloadManager.shared.start()
   }
@@ -23,7 +28,11 @@ struct AudioBoothWatch: App {
 extension ImagePipeline {
   nonisolated private static let dataCache = try? DataCache(name: "me.jgrenier.audioBS.watch.images")
 
-  nonisolated static func watch(customHeaders: [String: String]?) -> ImagePipeline {
+  nonisolated static func watch(
+    customHeaders: [String: String]?,
+    clientCertificate: ClientCertificateReference? = nil,
+    allowedHosts: Set<String> = []
+  ) -> ImagePipeline {
     ImagePipeline {
       let config = URLSessionConfiguration.default
       config.timeoutIntervalForResource = 300
@@ -35,7 +44,14 @@ extension ImagePipeline {
       config.urlCache = nil
       config.httpAdditionalHeaders = customHeaders
 
-      $0.dataLoader = DataLoader(configuration: config)
+      let loader = DataLoader(configuration: config)
+      if let clientCertificate {
+        loader.delegate = ClientCertificateChallengeDelegate.make(
+          for: clientCertificate,
+          allowedHosts: allowedHosts
+        )
+      }
+      $0.dataLoader = loader
       $0.dataCache = dataCache
     }
   }

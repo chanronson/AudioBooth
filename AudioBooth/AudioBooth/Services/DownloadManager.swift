@@ -1022,7 +1022,26 @@ final class DownloadManager: NSObject, ObservableObject {
   }
 }
 
+nonisolated final class CertificateChallengeTracker: @unchecked Sendable {
+  private let lock = NSLock()
+  private var identifiers: Set<Int> = []
+
+  func mark(_ identifier: Int) {
+    lock.lock()
+    defer { lock.unlock() }
+    identifiers.insert(identifier)
+  }
+
+  func consume(_ identifier: Int) -> Bool {
+    lock.lock()
+    defer { lock.unlock() }
+    return identifiers.remove(identifier) != nil
+  }
+}
+
 private final class DownloadSessionDelegate: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
+  private let certificateTracker = CertificateChallengeTracker()
+
   nonisolated func urlSession(
     _ session: URLSession,
     downloadTask: URLSessionDownloadTask,
@@ -1039,17 +1058,64 @@ private final class DownloadSessionDelegate: NSObject, URLSessionDownloadDelegat
     }
   }
 
+  nonisolated func urlSession(
+    _ session: URLSession,
+    task: URLSessionTask,
+    didReceive challenge: URLAuthenticationChallenge,
+    completionHandler: @escaping @Sendable (
+      URLSession.AuthChallengeDisposition,
+      URLCredential?
+    ) -> Void
+  ) {
+    guard
+      challenge.protectionSpace.authenticationMethod
+        == NSURLAuthenticationMethodClientCertificate
+    else {
+      completionHandler(.performDefaultHandling, nil)
+      return
+    }
+
+    let port = challenge.protectionSpace.port > 0
+      ? challenge.protectionSpace.port
+      : 443
+
+    guard
+      let endpoint = ClientCertificateEndpoint(
+        host: challenge.protectionSpace.host,
+        port: port
+      ),
+      let reference = ClientCertificateRegistry.shared.reference(
+        forEndpoint: endpoint.key
+      )
+    else {
+      completionHandler(.performDefaultHandling, nil)
+      return
+    }
+
+    if let credential = ClientCertificateCredentialProvider.credential(for: reference) {
+      completionHandler(.useCredential, credential)
+    } else {
+      certificateTracker.mark(task.taskIdentifier)
+      completionHandler(.cancelAuthenticationChallenge, nil)
+    }
+  }
+
   nonisolated func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
     guard let error, let relativePath = task.taskDescription else { return }
 
-    AppLogger.download.error("Download attempt failed: \(error.localizedDescription)")
+    let needsCertificate = certificateTracker.consume(task.taskIdentifier)
+    var mappedError = NetworkError.map(error)
+    if needsCertificate {
+      mappedError = NetworkError.clientCertificateRequired
+    }
+    AppLogger.download.error("Download attempt failed: \(mappedError.localizedDescription)")
     let resumeData = (error as NSError).userInfo[NSURLSessionDownloadTaskResumeData] as? Data
 
     Task { @MainActor in
       DownloadManager.shared.fileFailed(
         relativePath: relativePath,
         task: task,
-        error: error,
+        error: mappedError,
         resumeData: resumeData
       )
     }

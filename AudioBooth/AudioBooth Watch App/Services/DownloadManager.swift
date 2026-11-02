@@ -1,6 +1,24 @@
+import API
 import Combine
 import Foundation
 import OSLog
+
+nonisolated final class CertificateChallengeTracker: @unchecked Sendable {
+  private let lock = NSLock()
+  private var identifiers: Set<Int> = []
+
+  func mark(_ identifier: Int) {
+    lock.lock()
+    defer { lock.unlock() }
+    identifiers.insert(identifier)
+  }
+
+  func consume(_ identifier: Int) -> Bool {
+    lock.lock()
+    defer { lock.unlock() }
+    return identifiers.remove(identifier) != nil
+  }
+}
 
 final class DownloadManager: NSObject, ObservableObject {
   static let shared = DownloadManager()
@@ -34,6 +52,7 @@ final class DownloadManager: NSObject, ObservableObject {
 
   private let localStorage = LocalBookStorage.shared
   private let connectivityManager = WatchConnectivityManager.shared
+  private let certificateTracker = CertificateChallengeTracker()
 
   @Published private(set) var currentProgress: [String: Double] = [:]
   @Published private(set) var activeBookIDs: Set<String> = []
@@ -46,6 +65,7 @@ final class DownloadManager: NSObject, ObservableObject {
   private var bytesWritten: [String: [Int: Int64]] = [:]
   private var resumedTaskIDs: Set<Int> = []
   private var retriedTracks: Set<String> = []
+  private var certificateResendRequests: Set<String> = []
   private var pendingCancellations: [String: Task<Void, Never>] = [:]
   private var lastAutoAttempt: [String: Date] = [:]
   private var backgroundCompletions: [() -> Void] = []
@@ -353,6 +373,22 @@ final class DownloadManager: NSObject, ObservableObject {
 
   private func clearRetries(for bookID: String) {
     retriedTracks = retriedTracks.filter { !$0.hasPrefix("\(bookID)|") }
+    certificateResendRequests.remove(bookID)
+  }
+
+  private func requestCertificateResendOnce(for bookID: String) {
+    guard certificateResendRequests.insert(bookID).inserted else { return }
+    connectivityManager.requestClientCertificate()
+  }
+
+  nonisolated private static func isCertificateError(_ error: Error) -> Bool {
+    guard let networkError = error as? NetworkError else { return false }
+    switch networkError {
+    case .clientCertificateRequired, .clientCertificateRejected:
+      return true
+    default:
+      return false
+    }
   }
 
   private func storedBook(_ bookID: String) -> WatchBook? {
@@ -540,6 +576,48 @@ extension DownloadManager: URLSessionDownloadDelegate {
     }
   }
 
+  nonisolated func urlSession(
+    _ session: URLSession,
+    task: URLSessionTask,
+    didReceive challenge: URLAuthenticationChallenge,
+    completionHandler: @escaping @Sendable (
+      URLSession.AuthChallengeDisposition,
+      URLCredential?
+    ) -> Void
+  ) {
+    guard
+      challenge.protectionSpace.authenticationMethod
+        == NSURLAuthenticationMethodClientCertificate
+    else {
+      completionHandler(.performDefaultHandling, nil)
+      return
+    }
+
+    let port = challenge.protectionSpace.port > 0
+      ? challenge.protectionSpace.port
+      : 443
+
+    guard
+      let endpoint = ClientCertificateEndpoint(
+        host: challenge.protectionSpace.host,
+        port: port
+      ),
+      let reference = ClientCertificateRegistry.shared.reference(
+        forEndpoint: endpoint.key
+      )
+    else {
+      completionHandler(.performDefaultHandling, nil)
+      return
+    }
+
+    if let credential = ClientCertificateCredentialProvider.credential(for: reference) {
+      completionHandler(.useCredential, credential)
+    } else {
+      certificateTracker.mark(task.taskIdentifier)
+      completionHandler(.cancelAuthenticationChallenge, nil)
+    }
+  }
+
   func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
     let wasResumed = resumedTaskIDs.remove(task.taskIdentifier) != nil
 
@@ -564,18 +642,29 @@ extension DownloadManager: URLSessionDownloadDelegate {
 
     guard error != nil || isHTTPError else { return }
 
-    if (error as? URLError)?.code == .cancelled {
+    let needsCertificate = certificateTracker.consume(task.taskIdentifier)
+
+    if (error as? URLError)?.code == .cancelled, !needsCertificate {
       return
     }
 
+    let mappedError = error.map(NetworkError.map)
+    let isCertificateError = needsCertificate
+      || mappedError.map(Self.isCertificateError) ?? false
+    let errorDescription = mappedError?.localizedDescription ?? ""
+
     AppLogger.download.warning(
-      "Track \(info.index) for \(info.bookID) failed (status: \(statusCode ?? 0)): \(error?.localizedDescription ?? "")"
+      "Track \(info.index) for \(info.bookID) failed (status: \(statusCode ?? 0)): \(errorDescription)"
     )
 
     let retryKey = "\(info.bookID)|\(info.index)"
     guard !retriedTracks.contains(retryKey) else { return }
 
-    if statusCode == 401 || statusCode == 403 {
+    if isCertificateError {
+      retriedTracks.insert(retryKey)
+      clearResumeData(bookID: info.bookID, index: info.index)
+      requestCertificateResendOnce(for: info.bookID)
+    } else if statusCode == 401 || statusCode == 403 {
       retriedTracks.insert(retryKey)
       clearResumeData(bookID: info.bookID, index: info.index)
       retry(info, refreshingURLs: true)
