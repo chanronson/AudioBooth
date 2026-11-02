@@ -2,7 +2,7 @@ import XCTest
 @testable import API
 
 final class ClientCertificateAssetTests: XCTestCase {
-  private let data = Data(0..<256)
+  private let data = Data((0..<256).map { UInt8($0) })
 
   func testTwoHundredBoundedRangeIsSliced() {
     let plan = ClientCertificateResourceLoader.plan(
