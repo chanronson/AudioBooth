@@ -104,9 +104,11 @@ final class ClientCertificateResourceLoader: NSObject, AVAssetResourceLoaderDele
         return
       }
 
+      let isRangeResponse = httpResponse.statusCode == 206
+
       if let information = box.request.contentInformationRequest {
         information.contentType = httpResponse.mimeType
-        if httpResponse.statusCode == 206,
+        if isRangeResponse,
           let contentRange = httpResponse.value(forHTTPHeaderField: "Content-Range"),
           let totalLength = Self.totalLength(from: contentRange)
         {
@@ -114,12 +116,19 @@ final class ClientCertificateResourceLoader: NSObject, AVAssetResourceLoaderDele
           information.isByteRangeAccessSupported = true
         } else {
           information.contentLength = httpResponse.expectedContentLength
-          information.isByteRangeAccessSupported = false
+          information.isByteRangeAccessSupported = isRangeResponse
         }
       }
 
       if let dataRequest = box.request.dataRequest {
-        dataRequest.respond(with: data ?? Data())
+        let plan = Self.plan(
+          data: data ?? Data(),
+          statusCode: httpResponse.statusCode,
+          requestedOffset: dataRequest.requestedOffset,
+          requestedLength: dataRequest.requestedLength,
+          requestsAllDataToEnd: dataRequest.requestsAllDataToEndOfResource
+        )
+        dataRequest.respond(with: plan.bytes)
       }
 
       box.request.finishLoading()
@@ -163,6 +172,29 @@ final class ClientCertificateResourceLoader: NSObject, AVAssetResourceLoaderDele
     }
 
     return request
+  }
+
+  static func plan(
+    data: Data,
+    statusCode: Int,
+    requestedOffset: Int64,
+    requestedLength: Int,
+    requestsAllDataToEnd: Bool
+  ) -> (bytes: Data, totalLength: Int, isRangeResponse: Bool) {
+    let isRangeResponse = statusCode == 206
+
+    if isRangeResponse || (requestedOffset <= 0 && requestedLength <= 0 && !requestsAllDataToEnd) {
+      return (data, data.count, isRangeResponse)
+    }
+
+    let start = min(max(0, requestedOffset), Int64(data.count))
+    let available = Int64(data.count) - start
+    let requested = requestsAllDataToEnd || requestedLength <= 0
+      ? available
+      : min(Int64(requestedLength), available)
+
+    let bytes = data.dropFirst(Int(start)).prefix(Int(requested))
+    return (bytes, data.count, isRangeResponse)
   }
 
   private static func totalLength(from contentRange: String) -> Int64? {
