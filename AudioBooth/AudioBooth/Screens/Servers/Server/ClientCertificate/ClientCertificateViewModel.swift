@@ -33,21 +33,33 @@ final class ClientCertificateViewModel: ClientCertificateView.Model {
   }
 
   override func submitPassword(_ password: String) {
-    guard let pendingImport else { return }
+    guard !isImporting, let pendingImport else { return }
 
     isImporting = true
-    defer { isImporting = false }
+    let coordinator = coordinator
+    let pending = pendingImport
 
-    do {
-      let reference = try coordinator.commit(pendingImport, password: password)
-      self.pendingImport = nil
-      self.reference = reference
-      isAwaitingPassword = false
-      isMissing = false
-      errorMessage = nil
-      onCertificateChanged?(reference)
-    } catch {
-      errorMessage = error.localizedDescription
+    Task(priority: .userInitiated) { [weak self] in
+      do {
+        let reference = try coordinator.commit(pending, password: password)
+        await MainActor.run {
+          guard let self else { return }
+          self.pendingImport = nil
+          self.reference = reference
+          self.isAwaitingPassword = false
+          self.isMissing = false
+          self.errorMessage = nil
+          self.onCertificateChanged?(reference)
+        }
+      } catch {
+        await MainActor.run {
+          guard let self else { return }
+          self.errorMessage = error.localizedDescription
+        }
+      }
+      await MainActor.run {
+        self?.isImporting = false
+      }
     }
   }
 
