@@ -3,6 +3,23 @@ import Combine
 import Foundation
 import OSLog
 
+final class CertificateChallengeTracker: @unchecked Sendable {
+  private let lock = NSLock()
+  private var identifiers: Set<Int> = []
+
+  func mark(_ identifier: Int) {
+    lock.lock()
+    defer { lock.unlock() }
+    identifiers.insert(identifier)
+  }
+
+  func consume(_ identifier: Int) -> Bool {
+    lock.lock()
+    defer { lock.unlock() }
+    return identifiers.remove(identifier) != nil
+  }
+}
+
 final class DownloadManager: NSObject, ObservableObject {
   static let shared = DownloadManager()
 
@@ -35,6 +52,7 @@ final class DownloadManager: NSObject, ObservableObject {
 
   private let localStorage = LocalBookStorage.shared
   private let connectivityManager = WatchConnectivityManager.shared
+  private let certificateTracker = CertificateChallengeTracker()
 
   @Published private(set) var currentProgress: [String: Double] = [:]
   @Published private(set) var activeBookIDs: Set<String> = []
@@ -567,29 +585,37 @@ extension DownloadManager: URLSessionDownloadDelegate {
       URLCredential?
     ) -> Void
   ) {
+    guard
+      challenge.protectionSpace.authenticationMethod
+        == NSURLAuthenticationMethodClientCertificate
+    else {
+      completionHandler(.performDefaultHandling, nil)
+      return
+    }
+
     let port = challenge.protectionSpace.port > 0
       ? challenge.protectionSpace.port
       : 443
 
     guard
-      challenge.protectionSpace.authenticationMethod
-        == NSURLAuthenticationMethodClientCertificate,
       let endpoint = ClientCertificateEndpoint(
         host: challenge.protectionSpace.host,
         port: port
       ),
       let reference = ClientCertificateRegistry.shared.reference(
         forEndpoint: endpoint.key
-      ),
-      let credential = ClientCertificateCredentialProvider.credential(
-        for: reference
       )
     else {
       completionHandler(.performDefaultHandling, nil)
       return
     }
 
-    completionHandler(.useCredential, credential)
+    if let credential = ClientCertificateCredentialProvider.credential(for: reference) {
+      completionHandler(.useCredential, credential)
+    } else {
+      certificateTracker.mark(task.taskIdentifier)
+      completionHandler(.cancelAuthenticationChallenge, nil)
+    }
   }
 
   func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
@@ -616,12 +642,15 @@ extension DownloadManager: URLSessionDownloadDelegate {
 
     guard error != nil || isHTTPError else { return }
 
-    if (error as? URLError)?.code == .cancelled {
+    let needsCertificate = certificateTracker.consume(task.taskIdentifier)
+
+    if (error as? URLError)?.code == .cancelled, !needsCertificate {
       return
     }
 
     let mappedError = error.map(NetworkError.map)
-    let isCertificateError = mappedError.map(Self.isCertificateError) ?? false
+    let isCertificateError = needsCertificate
+      || mappedError.map(Self.isCertificateError) ?? false
     let errorDescription = mappedError?.localizedDescription ?? ""
 
     AppLogger.download.warning(

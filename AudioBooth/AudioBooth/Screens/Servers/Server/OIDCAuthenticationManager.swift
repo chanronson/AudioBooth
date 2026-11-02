@@ -295,27 +295,34 @@ final class OIDCSessionDelegate: NSObject, URLSessionTaskDelegate {
       URLCredential?
     ) -> Void
   ) {
-    let port = challenge.protectionSpace.port > 0
-      ? challenge.protectionSpace.port
-      : 443
-
     guard
       challenge.protectionSpace.authenticationMethod
-        == NSURLAuthenticationMethodClientCertificate,
-      let clientCertificate,
-      let endpoint = ClientCertificateEndpoint(
-        host: challenge.protectionSpace.host,
-        port: port
-      ),
-      allowedHosts.contains(endpoint.key),
-      let credential = ClientCertificateCredentialProvider.credential(
-        for: clientCertificate
-      )
+        == NSURLAuthenticationMethodClientCertificate
     else {
       completionHandler(.performDefaultHandling, nil)
       return
     }
 
-    completionHandler(.useCredential, credential)
+    let port = challenge.protectionSpace.port > 0
+      ? challenge.protectionSpace.port
+      : 443
+
+    guard
+      let clientCertificate,
+      let endpoint = ClientCertificateEndpoint(
+        host: challenge.protectionSpace.host,
+        port: port
+      ),
+      allowedHosts.contains(endpoint.key)
+    else {
+      completionHandler(.performDefaultHandling, nil)
+      return
+    }
+
+    if let credential = ClientCertificateCredentialProvider.credential(for: clientCertificate) {
+      completionHandler(.useCredential, credential)
+    } else {
+      completionHandler(.cancelAuthenticationChallenge, nil)
+    }
   }
 }
