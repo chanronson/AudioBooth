@@ -190,6 +190,12 @@ final class ServerViewModel: ServerView.Model {
     }
   }
 
+  deinit {
+    if let pendingClientCertificate {
+      ClientCertificateStore.shared.delete(id: pendingClientCertificate.id)
+    }
+  }
+
   private func configureClientCertificateUpdates() {
     clientCertificate.onCertificateChanged = { [weak self] reference in
       guard let self else { return }
