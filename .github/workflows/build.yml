@@ -65,7 +65,19 @@ jobs:
           xcodebuild -version
           xcodebuild -showsdks
 
+      - name: Resolve device sim info
+        id: resolve-device
+        run: |
+          DEVICE_ID="$(xcrun simctl list --ios devices available | grep -m1 -E '\(([0-9A-Fa-f-]{36})\)' | sed -E 's/.*\(([0-9A-Fa-f-]{36})\).*/\1/')"
+          echo "device-id=$DEVICE_ID" >> "$GITHUB_OUTPUT"
+
       - name: Run API package tests
+        working-directory: API
         run: |
           set -o pipefail
-          swift test --package-path API
+          xcodebuild test \
+            -scheme "API-Package" \
+            -destination "id=${{ steps.resolve-device.outputs.device-id }}" \
+            -derivedDataPath "$RUNNER_TEMP/DerivedDataTests" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO
